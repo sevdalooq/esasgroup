@@ -13,15 +13,18 @@ class DayActions {
   final WidgetRef ref;
   final int dayId;
 
-  /// [task] başarılıysa true döner; hata mesajını snackbar ile gösterir.
+  /// [task] başarılıysa true döner; sunucunun `message` alanı varsa onu,
+  /// yoksa [success] metnini snackbar ile gösterir. Hata mesajı da snackbar'da.
   Future<bool> run(
-    Future<void> Function() task, {
+    Future<String?> Function() task, {
     required String success,
     String progress = 'İşleniyor…',
   }) async {
     try {
-      await withProgress(context, task, message: progress);
-      if (context.mounted) showSnack(context, success);
+      final message = await withProgress(context, task, message: progress);
+      if (context.mounted) {
+        showSnack(context, (message == null || message.isEmpty) ? success : message);
+      }
       refresh();
       return true;
     } catch (e) {

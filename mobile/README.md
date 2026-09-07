@@ -22,8 +22,10 @@ Kontroller:
 ```bash
 flutter analyze
 flutter test
-flutter build apk --debug         # Android SDK gerekir (build/app/outputs/flutter-apk/app-debug.apk)
+flutter build apk --debug         # Android SDK gerekir → build/app/outputs/flutter-apk/app-debug.apk
 ```
+
+Android tarafı: `compileSdk 36`, `minSdk 23`, AGP 8.7.3, Kotlin 2.1.0, Gradle 8.10.2 (mobile_scanner 6 / CameraX 1.5 gereksinimi). `JAVA_HOME` olarak Android Studio JBR (Java 17+) kullanın.
 
 ### Backend'e bağlanma
 
@@ -75,30 +77,35 @@ lib/
 
 ## API sözleşmesi (Laravel Sanctum, `Authorization: Bearer <token>`)
 
+Gerçek backend yanıt şekilleri (07.09.2026). Ayrıştırma toleranslıdır; eski sözleşme şekilleri (`counts:{…}`, düz `personnel[]`/`inventory[]`, `{data:…}` sarmalı) de okunur.
+
 | Metot | Uç | Gövde | Yanıt |
 |---|---|---|---|
 | POST | `/login` | `{email, password}` | `{user:{id,name,email,…}, token, permissions:[…], is_admin}` |
-| GET | `/user` | – | `{user, permissions, is_admin}` (token yok) |
+| GET | `/user` | – | `{user, permissions, is_admin}` |
 | POST | `/logout` | – | – |
-| GET | `/field/today` | – | `[{id, date, status(pending\|active\|completed), project:{id,name,customer:{name}}, counts:{personnel_total, personnel_checked_in, inventory_delivered, inventory_returned}}]` |
-| GET | `/field/days/{id}` | – | `{id, date, status, start_photo, end_photo, project:{id,name,customer}, personnel:[{id, personnel:{id, first_name, last_name, full_name, photo, qr_payload}, zone, check_in_time, check_out_time, is_checked, payment_status}], inventory:[{id, inventory:{id,name,serial_number,qr_payload}, quantity, status, return_status, assigned_to_personnel_id}], zones:[{id,name,qr_payload}]}` |
-| POST | `/field/scan` | `{payload, project_day_id}` | `{type: inventory\|personnel\|zone, entity:{…}, context:{…}}` |
-| POST | `/field/days/{id}/check-in` | `personnel_payload \| personnel_id`, `zone_payload \| zone`, `photo?` (multipart) | – |
-| POST | `/field/days/{id}/check-out` | `personnel_payload \| assignment_id` | – |
-| POST | `/field/days/{id}/inventory/deliver` | `inventory_payload \| inventory_id`, `personnel_id?` | – |
-| POST | `/field/days/{id}/inventory/return` | `inventory_payload \| inventory_id`, `damaged` (bool), `damage_description?` | – |
-| POST | `/field/days/{id}/start` | `photo?` (multipart) | – |
-| POST | `/field/days/{id}/end` | `photo?` (multipart) | – |
-| GET | `/notifications` | – | `{data:[{id, data:{title, body, …}, read_at, created_at}], unread_count}` |
-| POST | `/notifications/{id}/read` · `/notifications/read-all` | – | – |
+| GET | `/field/today` | – | `{today:"YYYY-MM-DD", days:[{id, project_id, date(ISO), supervisor_id, status, start_photo, end_photo, notes, personnel_total, personnel_checked_in, personnel_checked_out, inventory_total, inventory_delivered, inventory_returned, project:{id,name,customer:{id,name}}, supervisor:{id,name}}]}` |
+| GET | `/field/days/{id}` | – | `{day:{id, date, status, start_photo, end_photo, notes, personnel_assignments:[{id, personnel_id, daily_wage, overtime_hours, total_earnings, zone, check_in_time, check_in_photo, check_out_time, check_out_photo, payment_status, payment_amount, is_checked, personnel:{id, first_name, last_name, phone, photo, qr_code, full_name, qr_payload}}], inventory_assignments:[{id, inventory_id, quantity, assigned_to_personnel_id (= görevlendirme id), delivered_at, returned_at, return_status(pending\|returned\|damaged), damage_photo, damage_description, status(pending\|delivered\|returned\|damaged), inventory:{id, name, type, serial_number, qr_code, nfc_uid, qr_payload}, assigned_to_personnel:{…, personnel:{…}}\|null}], project:{id,name,customer:{…}}, supervisor:{id,name}}, zones:[{id, qr_code, name, usage_count, qr_payload}], summary:{personnel_count, checked_in_count, checked_out_count, total_earnings, total_paid, total_pending, total_overtime, overtime_personnel_count, inventory_count, inventory_delivered, inventory_returned, inventory_damaged, inventory_pending_return}}` |
+| POST | `/field/scan` | `{payload \| nfc_uid, project_day_id?}` | `{type: inventory\|personnel\|zone, entity:{…}, context:{…}}` – envanter için `context={assigned, delivered, returned, assignment\|null}` |
+| POST | `/field/days/{id}/check-in` | `personnel_payload \| personnel_id`, `zone_payload \| zone`, `photo?`, `lat?`, `lng?` (multipart) | `{message, …}` |
+| POST | `/field/days/{id}/check-out` | `personnel_payload \| assignment_id`, `photo?` | `{message, …}` |
+| POST | `/field/days/{id}/inventory/deliver` | `inventory_payload \| nfc_uid \| inventory_id`, `personnel_payload \| personnel_id`, `quantity?` | `{message, …}` |
+| POST | `/field/days/{id}/inventory/return` | `inventory_payload \| nfc_uid \| inventory_id`, `damaged` (bool), `damage_description?`, `deduction_amount?`, `damage_photo?` | `{message, …}` |
+| POST | `/field/days/{id}/start` | `start_photo?` (multipart) | `{message, …}` |
+| POST | `/field/days/{id}/end` | `end_photo?` (multipart) | `{message, …}`; kural ihlalinde 422 `{message}` |
+| GET | `/notifications` | – | `{data:[{id(uuid), type, data:{title, body, kind, project_id?, project_day_id?, assignment_id?}, read_at, created_at}], unread_count}` |
+| POST | `/notifications/{uuid}/read` · `/notifications/read-all` | – | – |
 | POST | `/devices` | `{fcm_token}` | – (Firebase eklenene kadar çağrılmıyor) |
 
 QR / NFC payload biçimi: `ESAS:PER:<uuid>` personel · `ESAS:INV:<uuid>` envanter · `ESAS:ZONE:<uuid>` alan.
 
 Notlar:
-- Ayrıştırma toleranslıdır: eksik anahtarlar varsayılana düşer, `{data: …}` sarmalı açılır, `zone` string ya da `{name}` olabilir, `photo` göreli yol ise sunucu origin'i ile birleştirilir.
-- Fotoğraf varsa istek `multipart/form-data`, yoksa JSON gönderilir.
-- 401 yanıtı alınınca token silinir ve giriş ekranına dönülür. 422 yanıtında ilk doğrulama hatası gösterilir.
+- Ondalık sayılar string gelir (`"3600.00"`) → `asDouble` ile ayrıştırılır. `date` ISO UTC gece yarısı gelir → takvim günü UTC bileşenleriyle alınır (gün kayması olmaz).
+- İç içe kopyalarda `qr_payload` uuid'siz (`ESAS:INV:`) gelebilir; `qr_code` varsa payload ondan üretilir.
+- Fotoğraf varsa istek `multipart/form-data`, yoksa JSON gönderilir. Başarılı yazma yanıtındaki `message` snackbar'da gösterilir; 422 `message` hata olarak gösterilir.
+- 401 yanıtı alınınca token silinir ve giriş ekranına dönülür.
+
+Test hesabı (saha sorumlusu): `saha@esasgroup.com.tr` / `EsasSaha2026!`
 
 ## Yapılacaklar
 

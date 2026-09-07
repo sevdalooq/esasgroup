@@ -58,6 +58,7 @@ class DayTab extends ConsumerWidget {
     final theme = Theme.of(context);
     final api = ref.watch(apiClientProvider);
     final color = dayStatusColor(detail.status);
+    final summary = detail.summary;
 
     return RefreshIndicator(
       onRefresh: () => ref.refresh(dayDetailProvider(detail.id).future),
@@ -82,9 +83,12 @@ class DayTab extends ConsumerWidget {
                       StatusChip(label: dayStatusLabel(detail.status), color: color),
                     ],
                   ),
-                  if (detail.customerName.isNotEmpty)
+                  if (detail.customerName.isNotEmpty || detail.supervisorName.isNotEmpty)
                     Text(
-                      detail.customerName,
+                      [
+                        if (detail.customerName.isNotEmpty) detail.customerName,
+                        if (detail.supervisorName.isNotEmpty) 'Sorumlu: ${detail.supervisorName}',
+                      ].join(' · '),
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
                     ),
                   const SizedBox(height: 8),
@@ -96,12 +100,41 @@ class DayTab extends ConsumerWidget {
                   const Divider(height: 24),
                   Row(
                     children: [
-                      _Stat(label: 'Personel', value: '${detail.checkedInCount}/${detail.personnel.length}'),
-                      _Stat(label: 'Teslim', value: '${detail.deliveredCount}'),
-                      _Stat(label: 'İade', value: '${detail.returnedCount}'),
-                      _Stat(label: 'Alan', value: '${detail.zones.length}'),
+                      _Stat(label: 'Giriş', value: '${summary.checkedInCount}/${summary.personnelCount}'),
+                      _Stat(label: 'Çıkış', value: '${summary.checkedOutCount}'),
+                      _Stat(label: 'Teslim', value: '${summary.inventoryDelivered}/${summary.inventoryCount}'),
+                      _Stat(label: 'İade', value: '${summary.inventoryReturned}'),
                     ],
                   ),
+                  if (summary.inventoryDamaged > 0 || summary.inventoryPendingReturn > 0) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      [
+                        if (summary.inventoryPendingReturn > 0)
+                          'İade bekleyen: ${summary.inventoryPendingReturn}',
+                        if (summary.inventoryDamaged > 0) 'Hasarlı: ${summary.inventoryDamaged}',
+                      ].join(' · '),
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                    ),
+                  ],
+                  if (summary.totalEarnings > 0) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Hakediş: ${formatMoney(summary.totalEarnings)} · Ödenen: ${formatMoney(summary.totalPaid)} · Bekleyen: ${formatMoney(summary.totalPending)}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                  if (detail.notes != null) ...[
+                    const Divider(height: 24),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.sticky_note_2_outlined, size: 18, color: theme.colorScheme.outline),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(detail.notes!, style: theme.textTheme.bodyMedium)),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

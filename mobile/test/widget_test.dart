@@ -37,45 +37,108 @@ void main() {
       expect(day.status, '');
     });
 
-    test('ProjectDayDetail tam yanıt', () {
+    test('ProjectDaySummary gerçek /field/today şekli (düz sayaçlar)', () {
+      final day = ProjectDaySummary.fromJson({
+        'id': 5,
+        'project_id': 3,
+        'date': '2026-09-07T00:00:00.000000Z',
+        'status': 'pending',
+        'personnel_total': 12,
+        'personnel_checked_in': 3,
+        'inventory_total': 14,
+        'inventory_delivered': 2,
+        'inventory_returned': 1,
+        'project': {'id': 3, 'name': 'TV100 Yayını', 'customer': {'id': 6, 'name': 'TV100'}},
+      });
+      expect(day.date, DateTime(2026, 9, 7));
+      expect(day.counts.personnelTotal, 12);
+      expect(day.counts.personnelCheckedIn, 3);
+      expect(day.counts.inventoryTotal, 14);
+      expect(day.customerName, 'TV100');
+    });
+
+    test('ProjectDayDetail gerçek {day, zones, summary} şekli', () {
       final detail = ProjectDayDetail.fromJson({
-        'id': 1,
-        'date': '2026-09-07',
-        'status': 'active',
-        'project': {
-          'id': 3,
-          'name': 'Konser',
-          'customer': {'name': 'Müşteri A.Ş.'},
+        'day': {
+          'id': 5,
+          'date': '2026-09-07T00:00:00.000000Z',
+          'status': 'active',
+          'notes': 'Toplanma 17:30',
+          'project': {
+            'id': 3,
+            'name': 'Konser',
+            'customer': {'id': 6, 'name': 'Müşteri A.Ş.'},
+          },
+          'supervisor': {'id': 2, 'name': 'Ahmet Saha'},
+          'personnel_assignments': [
+            {
+              'id': 61,
+              'personnel_id': 3,
+              'daily_wage': '3600.00',
+              'total_earnings': '3600.00',
+              'zone': 'Ana giriş',
+              'check_in_time': '2026-09-07 08:30:00',
+              'is_checked': true,
+              'payment_status': 'pending',
+              'personnel': {
+                'id': 3,
+                'first_name': 'Ayşe',
+                'last_name': 'Yılmaz',
+                'full_name': 'Ayşe Yılmaz',
+                'qr_code': 'abc',
+                'qr_payload': 'ESAS:PER:abc',
+              },
+            }
+          ],
+          'inventory_assignments': [
+            {
+              'id': 102,
+              'inventory_id': 5,
+              'quantity': 2,
+              'assigned_to_personnel_id': 61,
+              'status': 'delivered',
+              'return_status': 'pending',
+              'inventory': {'id': 5, 'name': 'Telsiz', 'serial_number': 'SN1', 'qr_code': 'inv1', 'qr_payload': 'ESAS:INV:'},
+              'assigned_to_personnel': {
+                'id': 61,
+                'personnel_id': 3,
+                'personnel': {'id': 3, 'full_name': 'Ayşe Yılmaz'},
+              },
+            },
+            {
+              'id': 103,
+              'inventory_id': 6,
+              'status': 'damaged',
+              'return_status': 'damaged',
+              'inventory': {'id': 6, 'name': 'Yelek'},
+            }
+          ],
         },
-        'personnel': [
-          {
-            'id': 10,
-            'personnel': {'id': 7, 'full_name': 'Ayşe Yılmaz', 'qr_payload': 'ESAS:PER:x'},
-            'zone': 'Ana giriş',
-            'check_in_time': '2026-09-07 08:30:00',
-            'is_checked': 1,
-          }
-        ],
-        'inventory': [
-          {
-            'id': 20,
-            'inventory': {'id': 4, 'name': 'Telsiz', 'serial_number': 'SN1'},
-            'quantity': 2,
-            'status': 'delivered',
-            'return_status': null,
-          }
-        ],
         'zones': [
-          {'id': 1, 'name': 'Ana giriş', 'qr_payload': 'ESAS:ZONE:z'}
+          {'id': 1, 'name': 'Ana giriş', 'qr_code': 'z1', 'qr_payload': 'ESAS:ZONE:z1'}
         ],
+        'summary': {'personnel_count': 1, 'checked_in_count': 1, 'inventory_count': 2, 'inventory_delivered': 1, 'total_earnings': '3600.00'},
       });
       expect(detail.projectName, 'Konser');
       expect(detail.customerName, 'Müşteri A.Ş.');
+      expect(detail.supervisorName, 'Ahmet Saha');
+      expect(detail.notes, 'Toplanma 17:30');
       expect(detail.personnel.single.isCheckedIn, isTrue);
-      expect(detail.inventory.single.isDelivered, isTrue);
-      expect(detail.inventory.single.isReturned, isFalse);
-      expect(detail.zones.single.qrPayload, 'ESAS:ZONE:z');
-      expect(detail.checkedInCount, 1);
+      expect(detail.personnel.single.dailyWage, 3600);
+      final telsiz = detail.inventory.first;
+      expect(telsiz.isDelivered, isTrue);
+      expect(telsiz.isReturned, isFalse);
+      expect(telsiz.qrPayload, 'ESAS:INV:inv1');
+      expect(telsiz.assignedToAssignmentId, 61);
+      expect(telsiz.assignedToPersonnelId, 3);
+      expect(telsiz.assignedToName, 'Ayşe Yılmaz');
+      final yelek = detail.inventory.last;
+      expect(yelek.isReturned, isTrue);
+      expect(yelek.isDamaged, isTrue);
+      expect(detail.zones.single.qrPayload, 'ESAS:ZONE:z1');
+      expect(detail.summary.totalEarnings, 3600);
+      expect(detail.summary.inventoryCount, 2);
+      expect(detail.assignmentById(61)?.displayName, 'Ayşe Yılmaz');
     });
 
     test('json yardımcıları', () {
@@ -85,6 +148,9 @@ void main() {
       expect(asBool('false'), isFalse);
       expect(asMapList({'data': [{'a': 1}]}).length, 1);
       expect(asDateOnly('2026-09-07')?.day, 7);
+      expect(asDateOnly('2026-09-07T00:00:00.000000Z'), DateTime(2026, 9, 7));
+      expect(asDouble('3600.00'), 3600.0);
+      expect(asDouble(null, 1.5), 1.5);
     });
   });
 }

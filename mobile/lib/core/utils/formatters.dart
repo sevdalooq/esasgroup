@@ -29,6 +29,9 @@ String formatTime(String? raw) {
   return raw;
 }
 
+String formatMoney(double amount) =>
+    NumberFormat.currency(locale: appLocale, symbol: '₺', decimalDigits: 2).format(amount);
+
 String relativeTime(DateTime? date) {
   if (date == null) return '';
   final diff = DateTime.now().difference(date);

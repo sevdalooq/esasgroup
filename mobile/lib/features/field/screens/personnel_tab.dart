@@ -334,6 +334,11 @@ class _PersonnelSheet extends StatelessWidget {
           _InfoRow(label: 'Giriş', value: formatTime(p.checkInTime)),
           _InfoRow(label: 'Çıkış', value: formatTime(p.checkOutTime)),
           _InfoRow(label: 'Ödeme', value: paymentStatusLabel(p.paymentStatus)),
+          if (p.dailyWage > 0)
+            _InfoRow(label: 'Yevmiye', value: formatMoney(p.dailyWage)),
+          if (p.totalEarnings > 0)
+            _InfoRow(label: 'Hakediş', value: formatMoney(p.totalEarnings)),
+          if (p.phone != null) _InfoRow(label: 'Telefon', value: p.phone!),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),

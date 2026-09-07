@@ -94,7 +94,12 @@ class _InventoryTabState extends ConsumerState<InventoryTab>
     }
   }
 
-  Future<void> _deliver({String? payload, int? inventoryId, required String name}) async {
+  Future<void> _deliver({
+    String? payload,
+    int? inventoryId,
+    required String name,
+    int? quantity,
+  }) async {
     final itemName = name.isEmpty ? 'Envanter' : name;
     final pick = await showPersonnelPicker(
       context,
@@ -109,6 +114,7 @@ class _InventoryTabState extends ConsumerState<InventoryTab>
         inventoryPayload: payload,
         inventoryId: inventoryId,
         personnelId: person?.personnelId,
+        quantity: quantity,
       ),
       success: '$itemName teslim edildi${person != null ? ' · ${person.displayName}' : ''}',
       progress: 'Teslim kaydediliyor…',
@@ -207,8 +213,12 @@ class _InventoryTabState extends ConsumerState<InventoryTab>
                   final item = list[index - 1];
                   return _InventoryRow(
                     item: item,
-                    personnelName: _personnelName(item.assignedToPersonnelId),
-                    onDeliver: () => _deliver(inventoryId: item.inventoryId, name: item.displayName),
+                    personnelName: _holderName(item),
+                    onDeliver: () => _deliver(
+                      inventoryId: item.inventoryId,
+                      name: item.displayName,
+                      quantity: item.quantity,
+                    ),
                     onReturn: () => _returnItem(inventoryId: item.inventoryId, name: item.displayName),
                   );
                 },
@@ -217,10 +227,14 @@ class _InventoryTabState extends ConsumerState<InventoryTab>
     );
   }
 
-  String? _personnelName(int? personnelId) {
-    if (personnelId == null) return null;
+  /// Zimmetli personel adı: iç içe nesne → görevlendirme id → personel id.
+  String? _holderName(InventoryAssignment item) {
+    if (item.assignedToName != null) return item.assignedToName;
+    final byAssignment = detail.assignmentById(item.assignedToAssignmentId);
+    if (byAssignment != null) return byAssignment.displayName;
+    if (item.assignedToPersonnelId == null) return null;
     return detail.personnel
-        .where((p) => p.personnelId == personnelId)
+        .where((p) => p.personnelId == item.assignedToPersonnelId)
         .firstOrNull
         ?.displayName;
   }

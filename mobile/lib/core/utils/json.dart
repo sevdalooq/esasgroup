@@ -21,6 +21,14 @@ int? asIntOrNull(Object? value) {
   return null;
 }
 
+/// "3600.00" gibi string ondalıkları da kabul eder.
+double asDouble(Object? value, [double fallback = 0]) {
+  if (value is double) return value;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value.replaceAll(',', '.')) ?? fallback;
+  return fallback;
+}
+
 String asString(Object? value, [String fallback = '']) {
   if (value == null) return fallback;
   if (value is String) return value;
@@ -91,6 +99,11 @@ DateTime? asDateOnly(Object? value) {
     final parsed = DateTime.tryParse(value);
     if (parsed == null) return null;
     if (value.length <= 10) return DateTime(parsed.year, parsed.month, parsed.day);
+    // `2026-09-07T00:00:00.000000Z` → takvim günü UTC bileşenleriyle alınır,
+    // yerel saate çevrilince güne kaymasın.
+    if (parsed.isUtc && parsed.hour == 0 && parsed.minute == 0) {
+      return DateTime(parsed.year, parsed.month, parsed.day);
+    }
     final local = parsed.toLocal();
     return DateTime(local.year, local.month, local.day);
   }
