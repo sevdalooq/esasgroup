@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 class Personnel extends Model
 {
     use HasFactory, SoftDeletes;
-    use \App\Models\Concerns\HasQrCode;
+    use \App\Models\Concerns\HasQrCode, \Illuminate\Notifications\Notifiable;
 
     public const QR_PREFIX = 'PER';
 
@@ -31,10 +31,13 @@ class Personnel extends Model
         'first_name',
         'last_name',
         'tc_no',
+        'tc_no_hash',
         'birth_date',
         'ogg_number',
         'default_wage',
         'phone',
+        'email',
+        'fcm_token',
         'address',
         'photo',
         'photo_1',
@@ -132,7 +135,23 @@ class Personnel extends Model
 
     protected $appends = ['full_name', 'qr_payload'];
 
-    protected $hidden = ['tc_no'];
+    protected $hidden = ['tc_no', 'tc_no_hash'];
+
+    protected static function booted(): void
+    {
+        // tc_no şifreli; benzersizlik kontrolü için sha256 özetini tut
+        static::saving(function (Personnel $model) {
+            if ($model->isDirty('tc_no') || ($model->tc_no_hash === null && $model->getRawOriginal('tc_no'))) {
+                $tc = $model->tc_no;
+                $model->tc_no_hash = $tc ? self::hashTcNo($tc) : null;
+            }
+        });
+    }
+
+    public static function hashTcNo(string $tcNo): string
+    {
+        return hash('sha256', trim($tcNo));
+    }
 
     /**
      * TC No encrypted
@@ -261,11 +280,17 @@ class Personnel extends Model
     /** Sadece onaylı (aday olmayan) personel */
     public function scopeActiveStaff($query)
     {
-        return $query->whereNull('applicant_status')->orWhere('applicant_status', 'approved');
+        return $query->where(fn ($q) => $q->whereNull('applicant_status')->orWhere('applicant_status', 'approved'));
     }
 
     public function scopeApplicants($query)
     {
         return $query->whereNotNull('applicant_status');
+    }
+
+    /** Bildirim e-postası: personelin kendi e-postası, yoksa bağlı kullanıcı hesabı */
+    public function routeNotificationForMail($notification = null): ?string
+    {
+        return $this->email ?: $this->user?->email;
     }
 }

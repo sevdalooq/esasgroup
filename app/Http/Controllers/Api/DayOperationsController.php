@@ -7,15 +7,18 @@ use App\Models\ProjectDay;
 use App\Models\ProjectDayPersonnel;
 use App\Models\ProjectDayInventory;
 use App\Models\ZoneOption;
-use App\Models\PersonnelPayment;
-use App\Models\GroupPayment;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use App\Services\DayOperationService;
 
 class DayOperationsController extends Controller
 {
+    public function __construct(private readonly DayOperationService $dayOps)
+    {
+    }
+
     /**
      * Gün başlatma için gerekli verileri getir
      */
@@ -116,13 +119,8 @@ class DayOperationsController extends Controller
             'start_photo' => 'required|string', // Base64 veya dosya yolu
         ]);
 
-        // Fotoğrafı kaydet
-        $photoPath = $this->savePhoto($validated['start_photo'], 'day-photos/start');
-
-        $projectDay->update([
-            'status' => 'active',
-            'start_photo' => $photoPath,
-        ]);
+        $photoPath = $this->dayOps->savePhoto($validated['start_photo'], 'day-photos/start');
+        $this->dayOps->start($projectDay, $photoPath);
 
         $projectDay->load([
             'personnelAssignments.personnel:id,first_name,last_name',
@@ -130,7 +128,7 @@ class DayOperationsController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Gun baslatildi',
+            'message' => 'Gün başlatıldı',
             'day' => $projectDay,
         ]);
     }
@@ -236,142 +234,20 @@ class DayOperationsController extends Controller
             'end_photo' => 'required|string',
         ]);
 
-        // Tüm personeller check-out yapmış mı kontrol et
-        $pendingCheckouts = $projectDay->personnelAssignments()
-            ->whereNotNull('check_in_time')
-            ->whereNull('check_out_time')
-            ->count();
-
-        if ($pendingCheckouts > 0) {
-            return response()->json([
-                'message' => "{$pendingCheckouts} personelin cikisi henuz yapilmadi."
-            ], 422);
-        }
-
-        DB::beginTransaction();
         try {
-            // Fotoğrafı kaydet
-            $photoPath = $this->savePhoto($validated['end_photo'], 'day-photos/end');
-
-            $projectDay->update([
-                'status' => 'completed',
-                'end_photo' => $photoPath,
-            ]);
-
-            // Personel hakedişlerini kaydet (debit olarak)
-            $this->recordPersonnelEarnings($projectDay);
-
-            DB::commit();
-
-            // Özet bilgileri hesapla
-            $summary = $this->calculateDaySummary($projectDay);
+            $photoPath = $this->dayOps->savePhoto($validated['end_photo'], 'day-photos/end');
+            $result = $this->dayOps->end($projectDay, $photoPath);
 
             return response()->json([
-                'message' => 'Gun kapatildi',
-                'day' => $projectDay,
-                'summary' => $summary,
+                'message' => 'Gün kapatıldı',
+                'day' => $result['day'],
+                'summary' => $result['summary'],
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['message' => 'Gun kapatma basarisiz: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'Gün kapatma başarısız: ' . $e->getMessage()], 500);
         }
-    }
-
-    /**
-     * Personel hakedişlerini PersonnelPayment olarak kaydet
-     */
-    private function recordPersonnelEarnings(ProjectDay $projectDay): void
-    {
-        $projectDay->load(['project', 'personnelAssignments.personnel.group']);
-
-        $project = $projectDay->project;
-        $date = $projectDay->date;
-        $userId = auth()->id();
-
-        foreach ($projectDay->personnelAssignments as $assignment) {
-            $personnel = $assignment->personnel;
-            $totalEarnings = (float) $assignment->total_earnings;
-
-            if ($totalEarnings <= 0) {
-                continue;
-            }
-
-            // Personel alacak kaydı (debit)
-            PersonnelPayment::create([
-                'personnel_id' => $personnel->id,
-                'project_id' => $project->id,
-                'type' => 'debit',
-                'amount' => $totalEarnings,
-                'date' => $date,
-                'description' => "{$project->name} - {$date->format('d.m.Y')} hakedis",
-                'created_by' => $userId,
-            ]);
-
-            // Eğer personel bir gruba bağlıysa, grup komisyonunu hesapla
-            if ($personnel->group) {
-                $group = $personnel->group;
-                $commission = 0;
-
-                if ($group->commission_type === 'percentage') {
-                    $commission = $totalEarnings * ($group->commission_value / 100);
-                } elseif ($group->commission_type === 'fixed') {
-                    $commission = $group->commission_value;
-                }
-
-                if ($commission > 0) {
-                    GroupPayment::create([
-                        'group_id' => $group->id,
-                        'project_id' => $project->id,
-                        'type' => 'debit',
-                        'amount' => $commission,
-                        'date' => $date,
-                        'description' => "{$project->name} - {$personnel->full_name} komisyon ({$date->format('d.m.Y')})",
-                        'created_by' => $userId,
-                    ]);
-                }
-            }
-        }
-    }
-
-    /**
-     * Gün özeti hesapla
-     */
-    private function calculateDaySummary(ProjectDay $projectDay): array
-    {
-        $projectDay->load([
-            'personnelAssignments',
-            'inventoryAssignments',
-        ]);
-
-        $personnelAssignments = $projectDay->personnelAssignments;
-        $inventoryAssignments = $projectDay->inventoryAssignments;
-
-        $totalEarnings = $personnelAssignments->sum('total_earnings');
-        $totalPaid = $personnelAssignments->sum('payment_amount');
-        $totalOvertime = $personnelAssignments->sum(function ($pa) {
-            return $pa->overtime_hours * $pa->overtime_rate;
-        });
-        $overtimeCount = $personnelAssignments->where('overtime_hours', '>', 0)->count();
-
-        $returnedCount = $inventoryAssignments->where('return_status', 'returned')->count();
-        $damagedCount = $inventoryAssignments->where('return_status', 'damaged')->count();
-        $pendingReturns = $inventoryAssignments->where('return_status', 'pending')
-            ->whereNotNull('delivered_at')->count();
-
-        return [
-            'personnel_count' => $personnelAssignments->count(),
-            'checked_in_count' => $personnelAssignments->whereNotNull('check_in_time')->count(),
-            'checked_out_count' => $personnelAssignments->whereNotNull('check_out_time')->count(),
-            'total_earnings' => $totalEarnings,
-            'total_paid' => $totalPaid,
-            'total_pending' => $totalEarnings - $totalPaid,
-            'total_overtime' => $totalOvertime,
-            'overtime_personnel_count' => $overtimeCount,
-            'inventory_delivered' => $inventoryAssignments->whereNotNull('delivered_at')->count(),
-            'inventory_returned' => $returnedCount,
-            'inventory_damaged' => $damagedCount,
-            'inventory_pending_return' => $pendingReturns,
-        ];
     }
 
     /**
@@ -388,22 +264,11 @@ class DayOperationsController extends Controller
     }
 
     /**
-     * Fotoğraf kaydet (base64 veya dosya)
+     * Fotoğraf kaydet (base64 veya dosya) – DayOperationService'e devredildi
      */
     private function savePhoto(string $photo, string $folder): string
     {
-        // Base64 ise decode et ve kaydet
-        if (str_starts_with($photo, 'data:image')) {
-            $image = preg_replace('/^data:image\/\w+;base64,/', '', $photo);
-            $image = base64_decode($image);
-            $filename = uniqid() . '_' . time() . '.jpg';
-            $path = $folder . '/' . $filename;
-            Storage::disk('public')->put($path, $image);
-            return $path;
-        }
-
-        // Zaten bir yol ise direkt döndür
-        return $photo;
+        return $this->dayOps->savePhoto($photo, $folder) ?? $photo;
     }
 
     /**

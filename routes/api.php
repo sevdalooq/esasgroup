@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectDayController;
 use App\Http\Controllers\Api\DayOperationsController;
+use App\Http\Controllers\Api\FieldController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\AccountController;
@@ -20,6 +21,9 @@ use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\ProposalController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\CandidateController;
+use App\Http\Controllers\Api\PublicApplicationController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -191,9 +195,42 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:projects.view')->get('/projects/{project}/proposal/preview', [ProposalController::class, 'preview']);
 
     // [FIELD ROUTES] Saha / QR işlemleri (FieldController)
+    Route::middleware('permission:field.access')->get('/field/today', [FieldController::class, 'today']);
+    Route::middleware('permission:field.access')->get('/field/days/{projectDay}', [FieldController::class, 'show']);
+    Route::middleware('permission:field.scan')->post('/field/scan', [FieldController::class, 'scan']);
+    Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/check-in', [FieldController::class, 'checkIn']);
+    Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/check-out', [FieldController::class, 'checkOut']);
+    Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/inventory/deliver', [FieldController::class, 'deliverInventory']);
+    Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/inventory/return', [FieldController::class, 'returnInventory']);
+    Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/start', [FieldController::class, 'startDay']);
+    Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/end', [FieldController::class, 'endDay']);
+    Route::middleware('permission:inventory.view')->get('/field/inventory/labels', [FieldController::class, 'inventoryLabels']);
+    Route::middleware('permission:projects.view')->get('/field/projects/{project}/zones', [FieldController::class, 'zones']);
+    Route::middleware('permission:projects.manage_days')->post('/field/projects/{project}/zones', [FieldController::class, 'storeZone']);
+    Route::middleware('permission:projects.manage_days')->delete('/field/zones/{zone}', [FieldController::class, 'destroyZone']);
+
+    // Bildirimler (uygulama içi)
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
+    Route::post('/devices', [NotificationController::class, 'registerDevice']);
 
     // [CANDIDATE ROUTES] Aday havuzu yönetimi (CandidateController)
+    Route::middleware('permission:candidates.view')->get('/candidates', [CandidateController::class, 'index']);
+    Route::middleware('permission:candidates.view')->get('/candidates/{personnel}', [CandidateController::class, 'show']);
+    Route::middleware('permission:candidates.manage')->post('/candidates/{personnel}/approve', [CandidateController::class, 'approve']);
+    Route::middleware('permission:candidates.manage')->post('/candidates/{personnel}/reject', [CandidateController::class, 'reject']);
+
+    // Personel belgeleri (aday + kayıtlı personel)
+    Route::middleware('permission:personnel.view')->get('/personnel/{personnel}/documents', [CandidateController::class, 'documents']);
+    Route::middleware('permission:personnel.edit')->post('/personnel/{personnel}/documents', [CandidateController::class, 'storeDocument']);
+    Route::middleware('permission:personnel.edit')->delete('/personnel/documents/{document}', [CandidateController::class, 'destroyDocument']);
+    Route::middleware('permission:personnel.edit')->post('/personnel/documents/{document}/verify', [CandidateController::class, 'verifyDocument']);
 });
 
 // [PUBLIC CANDIDATE ROUTES] Dışarıdan başvuru (auth gerektirmez, throttle ile)
+Route::middleware('throttle:10,1')->prefix('public')->group(function () {
+    Route::get('/application-options', [PublicApplicationController::class, 'options']);
+    Route::post('/applications', [PublicApplicationController::class, 'store']);
+});
 

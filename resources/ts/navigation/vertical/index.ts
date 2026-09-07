@@ -14,7 +14,16 @@ export default [
     icon: { icon: 'tabler-calendar-event' },
     permission: 'projects.view',
   },
-  // [FIELD NAV]
+  {
+    heading: 'Saha',
+    permission: 'field.access',
+  },
+  {
+    title: 'Saha Ekranı',
+    to: { name: 'saha' },
+    icon: { icon: 'tabler-qrcode' },
+    permission: 'field.access',
+  },
   {
     heading: 'Master Data',
     permissions: ['customers.view', 'groups.view', 'personnel.view', 'inventory.view'],
@@ -43,7 +52,12 @@ export default [
     icon: { icon: 'tabler-box' },
     permission: 'inventory.view',
   },
-  // [CANDIDATE NAV]
+  {
+    title: 'Başvurular',
+    to: { name: 'personnel-applications' },
+    icon: { icon: 'tabler-user-plus' },
+    permission: 'candidates.view',
+  },
   {
     heading: 'Muhasebe',
     permission: 'accounting.view',

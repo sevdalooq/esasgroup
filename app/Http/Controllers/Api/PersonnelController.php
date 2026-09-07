@@ -21,7 +21,9 @@ class PersonnelController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Personnel::with('group:id,name,commission_type', 'personnelGroup:id,name');
+        $query = Personnel::with('group:id,name,commission_type', 'personnelGroup:id,name')
+            // Aday havuzu: incelenmemiş/reddedilmiş başvurular personel listesinde görünmez
+            ->where(fn($q) => $q->whereNull('applicant_status')->orWhere('applicant_status', 'approved'));
 
         if ($request->has('search')) {
             $search = $request->search;
@@ -218,7 +220,8 @@ class PersonnelController extends Controller
 
     public function all(Request $request): JsonResponse
     {
-        $query = Personnel::where('is_active', true);
+        $query = Personnel::where('is_active', true)
+            ->where(fn($q) => $q->whereNull('applicant_status')->orWhere('applicant_status', 'approved'));
 
         if ($request->has('group_id')) {
             if ($request->group_id === 'own') {

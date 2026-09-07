@@ -1451,6 +1451,15 @@ onMounted(async () => {
             Duzenle
           </VBtn>
           <VBtn
+            v-if="authStore.hasPermission('projects.manage_days')"
+            color="secondary"
+            variant="outlined"
+            prepend-icon="tabler-qrcode"
+            :to="{ name: 'projects-id-zones', params: { id: project.id } }"
+          >
+            Alan QR'ları
+          </VBtn>
+          <VBtn
             color="secondary"
             variant="outlined"
             prepend-icon="tabler-file-text"

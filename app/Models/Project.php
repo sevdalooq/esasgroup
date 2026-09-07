@@ -100,12 +100,14 @@ class Project extends Model
         $personnelCost = 0;
         $inventoryCost = 0;
 
+        $this->loadMissing('days.personnelAssignments', 'days.inventoryAssignments.inventory');
+
         foreach ($this->days as $day) {
-            foreach ($day->personnel as $assignment) {
-                $personnelCost += $assignment->daily_wage;
+            foreach ($day->personnelAssignments as $assignment) {
+                $personnelCost += (float) ($assignment->total_earnings ?: $assignment->daily_wage);
             }
 
-            foreach ($day->inventory as $item) {
+            foreach ($day->inventoryAssignments as $item) {
                 if ($item->inventory->isRental()) {
                     $inventoryCost += $item->inventory->daily_rate * $item->quantity;
                 }
@@ -138,7 +140,7 @@ class Project extends Model
     {
         $total = 0;
         foreach ($this->days as $day) {
-            foreach ($day->personnel as $assignment) {
+            foreach ($day->personnelAssignments as $assignment) {
                 $total += $assignment->daily_wage;
                 $total += $assignment->overtime_amount ?? 0;
             }

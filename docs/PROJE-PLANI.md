@@ -228,9 +228,24 @@ security-app/
 
 ---
 
-## 11. Sonraki Adımlar
+## 11. İlerleme Günlüğü
 
-1. Kullanıcıdan gerçek gereksinim listesini al → §5.4 ve §10'u güncelle
-2. Mobil teknoloji kararı (Flutter önerisi)
-3. Faz 0'ı başlat: repo iskeleti + Docker + Vuexy starter-kit entegrasyonu
-4. Şema v2'yi migration olarak yaz, seed ile örnek veri
+### 07.09.2026
+- [x] Eski kod tabanı temizlenerek taşındı, yerel ortam (Docker altyapı + host PHP/Vite) ayağa kalktı
+- [x] Bilinen hatalar: dashboard durum sayaçları ve borç hesabı, izinsiz `/all` uçları, çift oturum kaynağı, Türkçe seed metinleri, sihirbazların `pages/` dışına taşınması, `calculateEstimatedCost` ilişki hatası
+- [x] Demo verisi (`DemoDataSeeder`): 3 ekip (Kaplan %10 komisyon), 35 personel, 8 müşteri, 57 envanter, 6 proje; Zorlu PSM projesi gerçek `AccountingService::finalizeProject` ile muhasebeleştirildi, bakiyeler dolu
+- [x] QR/NFC altyapısı: `HasQrCode` trait, envanter/personel/alan QR kodları, `ESAS:INV|PER|ZONE:<uuid>` formatı, Saha ekranı (`/saha`), etiket yazdırma
+- [x] Aday havuzu: herkese açık başvuru formu (`/basvuru`), belge yükleme, `tc_no_hash` ile mükerrer kontrolü, Başvurular ekranı (onay/red)
+- [x] Bildirim altyapısı: `notifications` tablosu, görevlendirme ve değişiklik bildirimleri (observer), e-posta (Mailpit), navbar zili, cihaz token kaydı (FCM için hazırlık)
+- [x] Flutter `mobile/` iskeleti (giriş, bugünkü görevler, QR okuma, check-in, envanter teslim/iade)
+
+### Bilinen açıklar (sunum sonrası)
+- Gün sonu nakit ödemeleri kasaya `Transaction` olarak yansımıyor (eski davranış)
+- FCM push gönderimi henüz bağlı değil (token kaydı var)
+- Ekibe iş bildirimi / başvuru eşleştirme (aday havuzundan projeye çağırma) akışı
+- Fatura modülü ve raporlama
+
+## 12. Sonraki Adımlar
+1. Cuma sunumu için demo senaryosunun provası (proje → planlama → saha QR check-in → gün bitir → muhasebeleştirme → bakiyeler → başvuru formu)
+2. Sunum sonrası: canlıya alma (sunucu, HTTPS, S3), FCM push, aday havuzundan projeye personel çağırma akışı
+3. Fatura ve raporlama modülleri

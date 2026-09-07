@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import PersonnelQrCard from '@/views/field/PersonnelQrCard.vue'
+
 interface Group {
   id: number
   name: string
@@ -368,6 +370,12 @@ onMounted(() => {
           </div>
         </VCardText>
       </VCard>
+
+      <!-- Saha QR kartı -->
+      <PersonnelQrCard
+        :personnel="personnel"
+        class="mb-4"
+      />
 
       <VRow>
         <!-- Kisisel Bilgiler -->

@@ -350,6 +350,15 @@ onMounted(() => {
           style="max-width: 250px;"
         />
         <VBtn
+          variant="outlined"
+          color="secondary"
+          prepend-icon="tabler-qrcode"
+          class="me-2"
+          :to="{ name: 'inventory-labels' }"
+        >
+          QR Etiketleri
+        </VBtn>
+        <VBtn
           color="primary"
           prepend-icon="tabler-plus"
           @click="openDialog()"

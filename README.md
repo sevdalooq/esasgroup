@@ -1,33 +1,50 @@
-# vue
+# Esas Grup Yönetim Sistemi
 
-This template should help get you started developing with Vue 3 in Vite.
+Esas Güvenlik A.Ş. / Esas Group Danışmanlık A.Ş. için etkinlik, personel, ekip/komisyon, envanter ve muhasebe yönetimi. Web paneli (Laravel + Vuexy) ve saha mobil uygulaması (Flutter, `mobile/`).
 
-## Recommended IDE Setup
+Plan ve gereksinimler: [docs/PROJE-PLANI.md](docs/PROJE-PLANI.md). Geliştirici kuralları: [CLAUDE.md](CLAUDE.md).
 
-[VSCode](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+## Kurulum (yerel)
 
-## Type Support for `.vue` Imports in TS
+Gereksinimler: PHP 8.3, Composer, Node 22, Docker Desktop.
 
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
-pnpm install
+```bash
+cp .env.example .env            # ilk kurulumda
+composer install
+npm install
+docker compose up -d            # MySQL 3306, Redis 6379, Mailpit 8025, phpMyAdmin 8080
+php artisan key:generate
+php artisan migrate:fresh --seed   # local ortamda demo verisi de yüklenir
+php artisan storage:link
 ```
 
-### Compile and Hot-Reload for Development
+Çalıştırma (iki terminal):
 
-```sh
-pnpm dev
+```bash
+php artisan serve      # http://localhost:8000
+npm run dev            # Vite HMR (5173)
 ```
 
-### Type-Check, Compile and Minify for Production
+## Demo hesapları
 
-```sh
-pnpm build
-```
+| Rol | E-posta | Şifre |
+|---|---|---|
+| Yönetici | admin@esasgroup.com.tr | EsasAdmin2026! |
+| Müdür | mudur@esasgroup.com.tr | EsasMudur2026! |
+| Saha Sorumlusu | saha@esasgroup.com.tr | EsasSaha2026! |
+
+Demo verisini sıfırlamak için: `php artisan db:seed --class=Database\\Seeders\\Demo\\DemoDataResetSeeder && php artisan db:seed --class=DemoDataSeeder`
+
+## Önemli adresler
+
+- Panel: http://localhost:8000
+- Personel başvuru formu (herkese açık): http://localhost:8000/basvuru
+- Saha ekranı (mobil uyumlu, QR): http://localhost:8000/saha
+- E-posta kutusu (Mailpit): http://localhost:8025
+
+## Yapı
+
+- `app/Http/Controllers/Api` REST API (Sanctum), `app/Services` iş mantığı (muhasebe, gün operasyonları)
+- `resources/ts` Vue 3 + TypeScript + Vuetify (Vuexy), dosya tabanlı routing `pages/`
+- `database/seeders/DemoDataSeeder.php` sunum verisi
+- `mobile/` Flutter saha uygulaması (aynı API)

@@ -194,6 +194,20 @@ const login = async () => {
                   Giris Yap
                 </VBtn>
               </VCol>
+
+              <!-- Personel başvuru formu -->
+              <VCol
+                cols="12"
+                class="text-center"
+              >
+                <span class="text-body-2 text-medium-emphasis">Güvenlik görevlisi olarak çalışmak mı istiyorsunuz? </span>
+                <RouterLink
+                  class="text-primary"
+                  :to="{ name: 'basvuru' }"
+                >
+                  Personel başvuru formu
+                </RouterLink>
+              </VCol>
             </VRow>
           </VForm>
         </VCardText>

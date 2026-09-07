@@ -23,5 +23,10 @@ class DatabaseSeeder extends Seeder
             ExpenseCategoriesSeeder::class,
             PersonnelGroupSeeder::class,
         ]);
+
+        // Gerçekçi demo verisi yalnızca yerel geliştirme ortamında
+        if (app()->environment('local')) {
+            $this->call(DemoDataSeeder::class);
+        }
     }
 }

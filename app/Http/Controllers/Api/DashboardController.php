@@ -163,7 +163,8 @@ class DashboardController extends Controller
             ],
             'by_status' => [
                 'draft' => Project::where('status', 'draft')->count(),
-                'confirmed' => Project::where('status', 'confirmed')->count(),
+                'pending' => Project::where('status', 'pending')->count(),
+                'approved' => Project::where('status', 'approved')->count(),
                 'active' => Project::where('status', 'active')->count(),
                 'completed' => Project::where('status', 'completed')->count(),
                 'cancelled' => Project::where('status', 'cancelled')->count(),
@@ -185,23 +186,13 @@ class DashboardController extends Controller
             ->where('created_at', '>=', now()->startOfMonth())
             ->sum('amount');
 
-        // Personel borclari
-        $personnelDebt = DB::table('project_day_personnel')
-            ->join('project_days', 'project_day_personnel.project_day_id', '=', 'project_days.id')
-            ->where('project_days.status', 'completed')
-            ->sum('project_day_personnel.total_earnings');
+        // Personel borçları: muhasebeleştirilmiş hakedişler (debit) - yapılan ödemeler (credit)
+        $personnelDebt = PersonnelPayment::where('type', 'debit')->sum('amount');
+        $personnelPaid = PersonnelPayment::where('type', 'credit')->sum('amount');
 
-        $personnelPaid = PersonnelPayment::sum('amount');
-
-        // Grup borclari
-        $groupDebt = DB::table('project_day_personnel')
-            ->join('project_days', 'project_day_personnel.project_day_id', '=', 'project_days.id')
-            ->join('personnel', 'project_day_personnel.personnel_id', '=', 'personnel.id')
-            ->whereNotNull('personnel.group_id')
-            ->where('project_days.status', 'completed')
-            ->sum('project_day_personnel.total_earnings');
-
-        $groupPaid = GroupPayment::sum('amount');
+        // Ekip/aracı firma borçları: hesaplanan komisyonlar - yapılan ödemeler
+        $groupDebt = GroupPayment::where('type', 'commission')->sum('amount');
+        $groupPaid = GroupPayment::where('type', 'payment')->sum('amount');
 
         return [
             'accounts' => $accounts,
