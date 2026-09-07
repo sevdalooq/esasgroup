@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_exception.dart';
 import '../../../core/utils/formatters.dart';
@@ -363,6 +364,159 @@ class DayFlowActions {
       return;
     }
     await checkOut(local);
+  }
+
+  // ======================= Personel durumu (gelmedi / mola) =======================
+
+  /// Satır menüsü (uzun basma / ⋮): duruma göre Giriş, Çıkış, Gelmedi ↔ geri al,
+  /// Mola başlat / Moladan döndü, Ara.
+  Future<void> showPersonnelMenu(PersonnelAssignment p) async {
+    final tel = telUriFor(p.phone);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(p.displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(
+                [
+                  presenceLabel(p.effectivePresence),
+                  if (p.zone.isNotEmpty) p.zone,
+                  if (p.needsVerification && !p.isCheckedOut) 'Doğrulanmadı (kendi girişi)',
+                ].join(' · '),
+              ),
+            ),
+            const Divider(height: 1),
+            if (!p.isCheckedIn && !p.isAbsent)
+              ListTile(
+                leading: const Icon(Icons.login),
+                title: const Text('Giriş yap'),
+                onTap: () => Navigator.of(ctx).pop('check_in'),
+              ),
+            if (p.needsVerification && !p.isCheckedOut)
+              ListTile(
+                leading: const Icon(Icons.verified_outlined),
+                title: const Text('Girişi doğrula (QR ile giriş)'),
+                subtitle: const Text('Personelin kendi girişini saha sorumlusu girişiyle onaylar'),
+                onTap: () => Navigator.of(ctx).pop('check_in'),
+              ),
+            if (p.isOnSite && !p.isOnBreak)
+              ListTile(
+                leading: const Icon(Icons.coffee_outlined),
+                title: const Text('Mola başlat'),
+                onTap: () => Navigator.of(ctx).pop('break_start'),
+              ),
+            if (p.isOnBreak)
+              ListTile(
+                leading: const Icon(Icons.play_arrow_outlined),
+                title: Text('Moladan döndü (${formatElapsed(p.breakStartedAt)})'),
+                onTap: () => Navigator.of(ctx).pop('break_end'),
+              ),
+            if (p.isOnSite && detail.isActive)
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Çıkış yap'),
+                onTap: () => Navigator.of(ctx).pop('check_out'),
+              ),
+            if (!p.isCheckedIn && !p.isAbsent)
+              ListTile(
+                leading: Icon(Icons.person_off_outlined, color: Theme.of(ctx).colorScheme.error),
+                title: const Text('Gelmedi'),
+                onTap: () => Navigator.of(ctx).pop('absent'),
+              ),
+            if (p.isAbsent)
+              ListTile(
+                leading: const Icon(Icons.undo),
+                title: const Text('Gelmedi işaretini geri al'),
+                onTap: () => Navigator.of(ctx).pop('present'),
+              ),
+            if (tel != null)
+              ListTile(
+                leading: const Icon(Icons.call_outlined),
+                title: Text('Ara · ${p.phone}'),
+                onTap: () => Navigator.of(ctx).pop('call'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    switch (choice) {
+      case 'check_in':
+        await checkInManual(p);
+      case 'check_out':
+        await checkOut(p);
+      case 'break_start':
+        await breakStart(p);
+      case 'break_end':
+        await breakEnd(p);
+      case 'absent':
+        await markAbsent(p, absent: true);
+      case 'present':
+        await markAbsent(p, absent: false);
+      case 'call':
+        await callPhone(p.phone);
+    }
+  }
+
+  /// POST /field/days/{id}/absent {assignment_id, absent}
+  Future<bool> markAbsent(PersonnelAssignment p, {required bool absent}) async {
+    if (absent && p.isCheckedIn) {
+      showSnack(context, '${p.displayName} giriş yapmış; gelmedi işaretlenemez.', error: true);
+      return false;
+    }
+    if (absent) {
+      final ok = await confirmDialog(
+        context,
+        title: 'Gelmedi',
+        message: '${p.displayName} bugün gelmedi olarak işaretlensin mi?',
+        confirmText: 'Gelmedi',
+        destructive: true,
+      );
+      if (!ok || !context.mounted) return false;
+    }
+    return _actions.run(
+      () async => (await _repo.markAbsent(detail.id, p.id, absent: absent)).message,
+      success: absent ? '${p.displayName} gelmedi olarak işaretlendi' : 'İşaret kaldırıldı',
+      progress: 'Kaydediliyor…',
+    );
+  }
+
+  /// POST /field/days/{id}/break/start {assignment_id}
+  Future<bool> breakStart(PersonnelAssignment p) {
+    if (!p.isOnSite) {
+      showSnack(context, '${p.displayName} sahada değil.', error: true);
+      return Future.value(false);
+    }
+    return _actions.run(
+      () async => (await _repo.breakStart(detail.id, p.id)).message,
+      success: '${p.displayName} molaya çıktı',
+      progress: 'Mola başlatılıyor…',
+    );
+  }
+
+  /// POST /field/days/{id}/break/end {assignment_id}
+  Future<bool> breakEnd(PersonnelAssignment p) => _actions.run(
+        () async => (await _repo.breakEnd(detail.id, p.id)).message,
+        success: '${p.displayName} moladan döndü',
+        progress: 'Kaydediliyor…',
+      );
+
+  /// `tel:` bağlantısını açar.
+  Future<void> callPhone(String? phone) async {
+    final tel = telUriFor(phone);
+    if (tel == null) return;
+    try {
+      final ok = await launchUrl(Uri.parse(tel));
+      if (!ok && context.mounted) showSnack(context, 'Arama uygulaması açılamadı.', error: true);
+    } catch (_) {
+      if (context.mounted) showSnack(context, 'Arama uygulaması açılamadı.', error: true);
+    }
   }
 
   // ======================= Masraflar =======================

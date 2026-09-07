@@ -144,7 +144,7 @@ class _EndPhaseViewState extends ConsumerState<EndPhaseView> {
       });
     final total = detail.checkedInCount;
     final out = detail.checkedOutCount;
-    final never = detail.notCheckedIn.length;
+    final never = detail.notCheckedIn.length + detail.absent.length;
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -201,6 +201,7 @@ class _EndPhaseViewState extends ConsumerState<EndPhaseView> {
             PersonnelRow(
               assignment: p,
               onTap: p.isOnSite ? () => _actions.checkOut(p) : null,
+              onLongPress: () => _actions.showPersonnelMenu(p),
               subtitle: p.isCheckedOut
                   ? 'Çıkış ${formatTime(p.checkOutTime)} · Hakediş ${formatMoney(p.totalEarnings)} · ${paymentStatusLabel(p.paymentStatus)}'
                   : '${p.zone.isEmpty ? '' : '${p.zone} · '}Giriş ${formatTime(p.checkInTime)}'

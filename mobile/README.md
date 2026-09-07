@@ -1,10 +1,15 @@
 # Esas Saha – Mobil Uygulama (Flutter)
 
-Esas Grup **saha sorumlusu** uygulaması. Günün görevlerini listeler; QR/NFC ile personel giriş‑çıkışı, envanter teslim/iade ve gün başlat/bitir işlemlerini Laravel API'ye kaydeder.
+Esas Grup saha uygulaması. İki mod:
+
+- **Saha sorumlusu** (`field.access` izni): günün görevlerini listeler; QR/NFC ile personel giriş‑çıkışı, gelmedi/mola durumu, envanter teslim/iade ve gün başlat/bitir işlemlerini Laravel API'ye kaydeder.
+- **Personel** (yalnızca `self.access` izni): kendi görevlerini görür, alan QR'ı okutarak "Geldim" der, mola başlatır/bitirir, QR kartını gösterir, uygulama açıkken konumunu paylaşır.
+
+Her iki mod da Laravel Reverb (Pusher protokolü v7) üzerinden **canlı** güncellenir.
 
 - Paket adı: `esas_saha` · Bundle/Application ID: `com.esasgroup.esas_saha`
 - Flutter 3.27+ (Dart 3.6), Material 3, marka renkleri: kırmızı `#BF272E`, koyu `#2B2A29`
-- Durum yönetimi: `flutter_riverpod` · Yönlendirme: `go_router` · HTTP: `dio` · QR: `mobile_scanner` · NFC: `nfc_manager` (özellik bayrağı) · Token: `flutter_secure_storage` · Fotoğraf: `image_picker` · Tarih: `intl` (tr_TR)
+- Durum yönetimi: `flutter_riverpod` · Yönlendirme: `go_router` · HTTP: `dio` · Websocket: `web_socket_channel` (elle yazılmış Pusher istemcisi) · QR: `mobile_scanner` (okuma) / `qr_flutter` (gösterme) · NFC: `nfc_manager` (özellik bayrağı) · Konum: `geolocator` · Arama: `url_launcher` · Token: `flutter_secure_storage` · Fotoğraf: `image_picker` · Tarih: `intl` (tr_TR)
 
 ## Çalıştırma
 
@@ -15,7 +20,10 @@ flutter pub get
 flutter run                       # bağlı cihaz / emülatör
 flutter run -d <device-id>        # flutter devices ile listeleyin
 flutter run --dart-define=ESAS_NFC=false   # NFC butonunu kapatır
+flutter run --dart-define=REVERB_APP_KEY=xxxx --dart-define=REVERB_HOST=192.168.1.10 --dart-define=REVERB_PORT=8081 --dart-define=REVERB_SCHEME=ws
 ```
+
+`--dart-define` değerleri `lib/core/config/app_config.dart` içindeki varsayılanların üzerine yazar (`REVERB_APP_KEY` varsayılanı backend `.env` içindeki mevcut anahtardır). Giriş ekranındaki **Sunucu** bölümü de websocket adresini/anahtarını cihazda kalıcı olarak değiştirebilir.
 
 Kontroller:
 
@@ -23,6 +31,7 @@ Kontroller:
 flutter analyze
 flutter test
 flutter build apk --debug         # Android SDK gerekir → build/app/outputs/flutter-apk/app-debug.apk
+dart run tool/reverb_probe.dart   # canlı Reverb doğrulaması (aşağıda)
 ```
 
 Android tarafı: `compileSdk 36`, `minSdk 23`, AGP 8.7.3, Kotlin 2.1.0, Gradle 8.10.2 (mobile_scanner 6 / CameraX 1.5 gereksinimi). `JAVA_HOME` olarak Android Studio JBR (Java 17+) kullanın.
@@ -39,20 +48,53 @@ Backend `php artisan serve` ile `http://localhost:8000` üzerinde çalışırken
 
 Sunucu adresi giriş ekranındaki **Sunucu** alanından değiştirilebilir ve cihazda kalıcı olarak saklanır. Şema yazılmazsa `http://`, sonda `/api` yoksa otomatik eklenir.
 
+Aynı bölümde **Canlı bağlantı (Reverb) adresi** (`ws://host:port`; boşsa API adresinin ana makinesi + `8081`) ve **Reverb uygulama anahtarı** (boşsa derleme anahtarı) alanları vardır. `http(s)://` yazılırsa `ws(s)://`'e çevrilir, port yoksa `8081` eklenir.
+
+### Canlı bağlantı (websocket)
+
+Backend `php artisan reverb:start` ile `ws://localhost:8081` üzerinde çalışır. Uygulama `lib/core/realtime/pusher_client.dart` içindeki küçük Pusher v7 istemcisiyle bağlanır:
+
+1. `ws://host:8081/app/<key>?protocol=7&client=flutter&version=1` → `pusher:connection_established` (`socket_id`, `activity_timeout`)
+2. Özel kanal için `POST /api/broadcasting/auth {socket_id, channel_name}` (bearer token) → `{auth}` → `pusher:subscribe {channel, auth}`
+3. `pusher:ping` → `pusher:pong`; etkinlik zaman aşımında istemci ping atar, pong gelmezse yeniden bağlanır
+4. Kopunca üstel geri çekilme (1 s → 30 s) ile yeniden bağlanır ve kanallara yeniden abone olur; yetkilendirme 403 verirse o kanal atlanır, bağlantı sürer
+5. Olaylar `(channel, event, data)` akışı olarak verilir; `RealtimeService` kanal aboneliklerini sayaçla yönetir (`liveEventsProvider`, `dayEventsProvider(id)`)
+
+Kanallar ve olaylar:
+
+| Kanal | Kim | Olaylar |
+|---|---|---|
+| `private-live` | `field.access` / `projects.view` | `day.updated`, `personnel.location` |
+| `private-day.{id}` | günü yönetenler + o güne atanmış personel | `day.updated`, `personnel.location` |
+
+- `day.updated` → `{project_day_id, project_id, type, payload, actor_id, at}`; `type`: `check_in | check_out | break_start | break_end | absent | absent_cleared | assignment | assignment_removed | inventory | expense | day_status | change`; personel olaylarında `payload = {assignment_id, personnel_id, name, presence, zone, check_in_time, check_out_time, break_started_at, payment_status, action}`.
+- `personnel.location` → `{personnel_id, project_day_id, name, photo, lat, lng, accuracy, recorded_at}`.
+
+Ekranlar: **Bugün** `private-live`'a abone olur ve her olayda listeyi (600 ms birleştirme) yeniler; **Görev Detayı** `private-day.{id}`'ye abone olur, günü sessizce yeniden çeker ve olayı başkası yaptıysa (`actor_id` ≠ ben) kısa bildirim gösterir ("Ahmet Yılmaz giriş yaptı"). **Görevlerim** (personel) bugünkü günün kanalını dinler; saha sorumlusu girişi kaydettiğinde/molayı değiştirdiğinde ekran kendini günceller. App bar'daki nokta: yeşil bağlı · sarı bağlanıyor · kırmızı kopuk.
+
+Canlı doğrulama betiği (saf Dart, cihaz gerekmez):
+
+```bash
+cd mobile && dart run tool/reverb_probe.dart            # --api, --ws, --day, --key, --no-trigger seçenekleri
+```
+
+Saha sorumlusu ile `/login` → websocket → `private-live` yetkilendirme/abonelik → gün 5'te `check_in_time == null` bir görevlendirme için `POST /field/days/5/absent {absent:true}` sonra `{absent:false}` tetikler (durum geri alınır) ve gelen ilk `day.updated` olayını yazdırır.
+
 Geliştirme için düz HTTP'ye izin verilmiştir: Android `usesCleartextTraffic="true"`, iOS `NSAllowsArbitraryLoads`. Üretimde HTTPS'e geçip bu ayarları kaldırın.
 
 Seed kullanıcı (backend): `admin@esasgroup.com.tr` / `EsasAdmin2026!`
 
 ## Ekranlar
 
-1. **Giriş** – ESAS GRUP logosu, e‑posta/şifre, açılır **Sunucu** alanı, hata bandı. Token güvenli depoda saklanır; açılışta `/user` ile doğrulanır (ağ yoksa önbellekteki kullanıcıyla devam eder).
-2. **Bugün** – bugünkü proje günleri, aşama çipi (*Başlamadı / Devam ediyor / Tamamlandı*), personel ilerleme çubuğu, "Personel 3/10 · Teslim 2 · İade 1" çipleri, aşağı çekerek yenileme, boş durum. App bar'da okunmamış rozetli zil → **Bildirimler**; hesap menüsünden çıkış.
-3. **Görev Detayı** – sekme yok; `day.status` + yerel adım durumuna göre **yönlendirmeli akış** (üstte adım göstergesi, altta yapışık işlem çubuğu). Aşama etiketi app bar'da: *Başlamadı / Devam ediyor / Tamamlandı*.
+1. **Giriş** – ESAS GRUP logosu, e‑posta/şifre, açılır **Sunucu** bölümü (API adresi, Reverb adresi, Reverb anahtarı), hata bandı. Token güvenli depoda saklanır; açılışta `/user` ile doğrulanır (ağ yoksa önbellekteki kullanıcı + izinlerle devam eder). Girişten sonra izinlere göre yönlendirme: `field.access` → **Bugün**, yalnızca `self.access` → **Görevlerim** (personel modu).
+2. **Bugün** – bugünkü proje günleri, aşama çipi (*Başlamadı / Devam ediyor / Tamamlandı*), personel ilerleme çubuğu, "Personel 3/10 · Teslim 2 · İade 1" çipleri, aşağı çekerek yenileme, boş durum, `private-live` ile canlı yenileme. App bar'da bağlantı noktası, okunmamış rozetli zil → **Bildirimler**; hesap menüsünden çıkış.
+3. **Görev Detayı** – sekme yok; `day.status` + yerel adım durumuna göre **yönlendirmeli akış** (üstte adım göstergesi, altta yapışık işlem çubuğu). Aşama etiketi app bar'da: *Başlamadı / Devam ediyor / Tamamlandı*. `private-day.{id}` ile canlı yenileme + başkasının işlemleri için bildirim.
+   - **Personel satırları** her aşamada `presence` çipi gösterir: *Bekleniyor* (assigned) · *Sahada* (checked_in) · *Molada · 12 dk* (on_break, `break_started_at`'tan geçen süre) · *Çıkış yaptı* (checked_out) · *Gelmedi* (absent, üstü çizili). Personel kendi telefonundan giriş yaptıysa (`check_in_time` dolu, `is_checked=false`) ek **Doğrulanmadı** çipi. **Uzun basma / ⋮** menüsü: *Giriş yap* · *Girişi doğrula* · *Mola başlat* / *Moladan döndü* · *Çıkış yap* · **Gelmedi** ↔ *Gelmedi işaretini geri al* · *Ara*.
    - **A · Gün Başlangıcı** (`pending`):
-     1. *Personel Girişi* – aranabilir liste, satırda **Giriş** ya da büyük **QR Okut** FAB'ı → giriş alt sayfası (Alan çipleri / QR ile alan / serbest metin → isteğe bağlı fotoğraf → **Zimmet teslim et**: teslim edilmemiş envanter onay kutuları veya QR → Onay). Güne atanmamış bir personel okutulursa "son dakika ekle" onayıyla eklenip giriş yapılır. İlerleme *x/y*; **Devam** eksik personeli listeleyen uyarıyla geçer.
+     1. *Personel Girişi* – aranabilir liste (giriş yapmayanlar üstte, gelmeyenler altta), satırda **Giriş** ya da büyük **QR Okut** FAB'ı → giriş alt sayfası (Alan çipleri / QR ile alan / serbest metin → isteğe bağlı fotoğraf → **Zimmet teslim et**: teslim edilmemiş envanter onay kutuları veya QR → Onay). Güne atanmamış bir personel okutulursa "son dakika ekle" onayıyla eklenip giriş yapılır. İlerleme *x/y*; **Devam** eksik personeli (gelmedi işaretlenenler hariç) listeleyen uyarıyla geçer.
      2. *Özet* – giriş yapanlar (alan + teslim edilen zimmet), teslim edilmemiş envanter için hızlı **Teslim Et** / QR.
      3. *Başlangıç Fotoğrafı* – kamera/galeri + önizleme → **Günü Başlat** (`start`, `start_photo` isteğe bağlı).
-   - **B · Etkinlik Devam Ediyor** (`active`): KPI kutuları (giriş yapan/toplam, teslim edilen envanter, masraf toplamı) ve işlemler: **Geç Gelen Personel Girişi**, **Son Dakika Personel Ekle** (QR), **Envanter Teslim** (liste/QR), **Masraf Ekle** (kategori çipleri `GET /expense-categories/all`, açıklama, tutar, fiş fotoğrafı → multipart `POST …/expenses`; liste `day.expenses`, *pending* olanlar silinebilir). Altta büyük kırmızı **Gün Sonu Akışını Başlat** (yerel geçiş; *Etkinliğe Dön* ile geri alınır).
+   - **B · Etkinlik Devam Ediyor** (`active`): KPI kutuları (giriş yapan/toplam, teslim edilen envanter, masraf toplamı) ve işlemler: **Geç Gelen Personel Girişi**, **Son Dakika Personel Ekle** (QR), **Envanter Teslim** (liste/QR), **Masraf Ekle** (kategori çipleri `GET /expense-categories/all`, açıklama, tutar, fiş fotoğrafı → multipart `POST …/expenses`; liste `day.expenses`, *pending* olanlar silinebilir). **Personel** bölümü: tüm görevlendirmeler presence çipleriyle (molada → doğrulanmamış → sahada → bekleniyor → gelmedi → çıkış sırasıyla), "Sahada 3 · Molada 1 · Gelmedi 2" özeti, satıra dokunma/⋮ ile durum menüsü. Altta büyük kırmızı **Gün Sonu Akışını Başlat** (yerel geçiş; *Etkinliğe Dön* ile geri alınır).
    - **C · Gün Sonu** (`active` + yerel bayrak):
      1. *Personel Çıkışı* – giriş yapanlar listesi, satırda **Çıkış** ya da **QR ile Çıkış** → 3 alt adımlı çıkış alt sayfası: (a) çıkış saati (varsayılan şimdi) + **Mesaiye kaldı** (saat × saat ücreti, varsayılan yevmiye/8, toplam hesaplanır) → (b) **Zimmet İadesi**: bu personele zimmetli envanter, her biri *Sağlam / Hasarlı / Bekle*; hasarlıda açıklama + kesinti → (c) **Ödeme**: *Şimdi Ödenecek / Sonradan / Kısmi*, yöntem *Nakit / Banka / Karışık*, tutar ve kalan → tek `POST …/check-out` (JSON). **Devam** ancak sahadaki herkes çıkış yapınca aktif.
      2. *Gün Sonu Özeti* – toplam hakediş / mesai / ödenen / kalan (`summary`), personel başına yevmiye · mesai · hakediş · ödenen · kalan, iade edilmemiş envanter için hızlı **Teslim Al** / QR, masraf toplamı.
@@ -60,6 +102,12 @@ Seed kullanıcı (backend): `admin@esasgroup.com.tr` / `EsasAdmin2026!`
    - **D · Tamamlandı** (`completed`): salt okunur özet, başlangıç/bitiş fotoğrafları, personel/envanter/masraf listeleri, **Bugünkü Görevlere Dön**.
 4. **QR Tarayıcı** – tam ekran kamera, kırmızı köşeli çerçeve, fener ve kamera değiştirme, elle kod girişi, cihaz destekliyorsa **NFC ile oku** (NDEF metin/URI kaydını payload olarak kullanır).
 5. **Bildirimler** – okunmamışlar vurgulu, dokununca okundu; "Tümünü okundu yap"; `project_day_id` taşıyan bildirim ilgili güne gider.
+6. **Görevlerim** (PERSONEL MODU, `/` yolu `self.access` kullanıcıları için) – `GET /me/assignments`:
+   - Üstte personel kartı + **QR Kartım** (`personnel.qr_payload`, `qr_flutter` ile büyük QR; saha sorumlusuna okutulur; app bar'da da kısayol).
+   - **Bugünkü görev** kartı: proje, müşteri, adres, alan, not, **Saha sorumlusu: ad · telefon** (dokununca `tel:` ile arar), presence çipi (+ *Doğrulanmadı*), giriş saati ve toplam mola. Duruma göre büyük buton: **Geldim – Alan QR'ı okut** → tarayıcı (yalnızca `ESAS:ZONE:` kabul edilir) → cihaz konumu (izin varsa, 8 sn) → `POST /me/check-in {zone_payload, project_day_id, lat, lng}` · **Mola** → `POST /me/break/start` · **Moladan döndüm** → `POST /me/break/end`. Çıkış yapılmış / gün kapanmış / gelmedi durumlarında bilgi satırı.
+   - **Konum paylaşımı** anahtarı (cihazda kalıcı): açıkken, uygulama ön plandayken ve bugün görev varken (çıkış yapılmadıysa) her **60 sn** `POST /field/location {lat, lng, accuracy, project_day_id}` + 25 m'lik hareket olduğunda anında gönderim (`geolocator` positionStream, `distanceFilter: 25`). Satırda son gönderim saati / hata; izin kalıcı reddedildiyse **Ayarları aç**. İzin: iOS `NSLocationWhenInUseUsageDescription`, Android `ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION` (whileInUse). Arka plana geçince durur, dönünce sürer; **arka plan konumu yok**.
+   - **Yaklaşan görevler** listesi (tarih, proje, müşteri, alan, adres, durum çipi).
+   - Bugünkü günün `private-day.{id}` kanalını dinler: saha sorumlusu girişi kaydettiğinde / molayı değiştirdiğinde / gelmedi işaretlediğinde kart güncellenir ve kısa bildirim gösterilir.
 
 ## Kod yapısı
 
@@ -68,30 +116,43 @@ lib/
   main.dart                 # intl tr_TR init, ProviderScope
   app.dart                  # tema (marka renkleri, Material 3), MaterialApp.router, tr yerelleştirme
   core/
-    config/app_config.dart  # varsayılan URL (platforma göre), NFC bayrağı, URL normalize
+    config/app_config.dart  # varsayılan URL (platforma göre), NFC bayrağı, Reverb anahtar/host/port (--dart-define), ws URL normalize, reverbUri()
     api/api_client.dart     # dio + bearer interceptor, 401 → oturum kapatma
     api/api_exception.dart  # DioException → Türkçe mesaj
-    storage/app_storage.dart# flutter_secure_storage sarmalayıcı
-    router/app_router.dart  # go_router, auth redirect, splash
-    utils/                  # json (toleranslı parse), formatters (tr tarih/durum etiketleri), photo_picker
+    realtime/
+      pusher_client.dart    # saf Dart Pusher v7 istemcisi (web_socket_channel): bağlan, ping/pong, private auth, backoff, olay akışı
+      realtime_events.dart  # DayUpdatedEvent, PersonnelLocationEvent (+ toast metinleri)
+      realtime_provider.dart# RealtimeService (/broadcasting/auth, sayaçlı abonelik, oturuma bağlı bağlan/kopar), realtimeStateProvider, liveEventsProvider, dayEventsProvider(id)
+      connection_dot.dart   # app bar bağlantı noktası
+    storage/app_storage.dart# flutter_secure_storage sarmalayıcı (token, API/ws adresi, ws anahtarı, {user,permissions,is_admin}, konum paylaşımı tercihi)
+    router/app_router.dart  # go_router, auth redirect, splash, `/` → moda göre Bugün / Görevlerim
+    utils/                  # json (toleranslı parse), formatters (tr tarih/durum/presence etiketleri, formatElapsed, telUriFor), photo_picker
     widgets/ui_helpers.dart # snackbar, progress dialog, onay, boş/hata görünümleri, StatusChip
   features/
-    auth/                   # AppUser, AuthRepository, AuthNotifier (login/logout/restore), LoginScreen
+    auth/                   # AppUser, AuthRepository, AuthNotifier (login/logout/restore, AppMode supervisor|personnel, ws ayarları), LoginScreen
     field/
-      models/models.dart    # ProjectDaySummary, ProjectDayDetail (+expenses), PersonnelAssignment (+assigned_inventory), DayExpense, ExpenseCategory, CheckOutRequest/Result, ExpenseResult
-      field_repository.dart # /field/* + masraf uçları (checkOut(JSON), addExpense(multipart), deleteExpense, expenseCategories)
+      models/models.dart    # ProjectDaySummary, ProjectDayDetail (+expenses, absent/onBreak/awaitingVerification), PersonnelAssignment (+assigned_inventory, presence, break_started_at, break_minutes, needsVerification), DayExpense, ExpenseCategory, CheckOutRequest/Result (=AssignmentResult), ExpenseResult
+      field_repository.dart # /field/* + masraf uçları + markAbsent / breakStart / breakEnd
       field_providers.dart  # todayProvider, dayDetailProvider, expenseCategoriesProvider, dayFlowProvider (yerel adım/aşama), phaseOf()
       screens/
-        day_detail_screen.dart  # aşama yönlendirici (A/B/C/D)
+        day_detail_screen.dart  # aşama yönlendirici (A/B/C/D) + private-day.{id} dinleme
         start_phase_view.dart   # A · Gün Başlangıcı (3 adım)
-        active_hub_view.dart    # B · Etkinlik hub'ı + masraflar
+        active_hub_view.dart    # B · Etkinlik hub'ı + personel durumu + masraflar
         end_phase_view.dart     # C · Gün Sonu (3 adım)
         completed_view.dart     # D · salt okunur özet
-        day_flow_actions.dart   # tüm sunucu işlemleri (giriş/çıkış/teslim/iade/masraf/başlat/bitir)
-        today_screen.dart, day_actions.dart
-      widgets/              # step_indicator, bottom_action_bar, check_in_sheet, check_out_sheet, expense_sheet, zone_picker_sheet (ZoneSelector), personnel/inventory rows, photo_widgets, personnel_picker_sheet, return_inventory_sheet
+        day_flow_actions.dart   # tüm sunucu işlemleri (giriş/çıkış/teslim/iade/masraf/başlat/bitir/gelmedi/mola, satır menüsü, ara)
+        today_screen.dart (private-live dinleme), day_actions.dart
+      widgets/              # step_indicator, bottom_action_bar, check_in_sheet, check_out_sheet, expense_sheet, zone_picker_sheet (ZoneSelector), personnel_row (PresenceChip, Doğrulanmadı, onLongPress), inventory_row, photo_widgets, personnel_picker_sheet, return_inventory_sheet
+    self/                   # PERSONEL MODU
+      models/self_models.dart   # SelfPersonnel, SelfDay, SelfAssignment, SelfAssignments (todays/upcoming), SelfCheckInRequest, LocationReport, SelfActionResult
+      self_repository.dart      # /me/assignments, /me/check-in, /me/break/start|end, /field/location
+      self_providers.dart       # myAssignmentsProvider
+      location/location_sharing.dart # LocationSharingNotifier (izin, 60 sn timer + 25 m akış, ön plan), currentPositionOrNull()
+      screens/self_home_screen.dart  # Görevlerim
     notifications/          # model, repository (registerDevice no-op TODO), AsyncNotifier, ekran
     scanner/                # ScannerScreen, NfcReader, QrPayload yardımcıları
+tool/reverb_probe.dart      # canlı Reverb doğrulama betiği (dart run)
+test/                       # widget_test (config/QR/modeller), field_models_test (+presence), self_models_test, realtime_test (sahte soketle Pusher istemcisi)
 ```
 
 ## API sözleşmesi (Laravel Sanctum, `Authorization: Bearer <token>`)
@@ -112,6 +173,13 @@ Gerçek backend yanıt şekilleri (07.09.2026). Ayrıştırma toleranslıdır; e
 | POST | `/field/days/{id}/inventory/return` | `inventory_payload \| nfc_uid \| inventory_id`, `damaged` (bool), `damage_description?`, `deduction_amount?`, `damage_photo?` | `{message, …}` |
 | POST | `/field/days/{id}/start` | `start_photo?` (multipart) | `{message, …}` |
 | POST | `/field/days/{id}/end` | `end_photo?` (multipart) | `{message, …}`; kural ihlalinde (çıkışı yapılmamış personel) 422 `{message}` |
+| POST | `/field/days/{id}/absent` | `{assignment_id, absent}` | `{message, assignment, summary}` – `presence` absent ↔ assigned |
+| POST | `/field/days/{id}/break/start` · `/break/end` | `{assignment_id, reason?}` | `{message, assignment, summary}` – `presence` on_break ↔ checked_in, `break_started_at`, `break_minutes` |
+| POST | `/broadcasting/auth` | `{socket_id, channel_name}` | `{auth:"<key>:<imza>"}`; yetkisiz kanalda 403 |
+| POST | `/field/location` | `{lat, lng, accuracy? (int), project_day_id?, recorded_at?}` | `{message, project_day_id}`; kullanıcı bir personel kaydına bağlı değilse 422. `personnel.location` olayı yayınlanır |
+| GET | `/me/assignments` | – | `{personnel:{id, first_name, last_name, full_name, photo, qr_payload}, assignments:[{id, project_day_id, personnel_id, zone, presence, check_in_time, check_out_time, break_started_at, break_minutes, daily_wage, is_checked, …, project_day:{id, date, status, notes, venue_lat, venue_lng, project:{id, name, venue_address, customer:{id, name}}, supervisor:{id, name, phone}}}], today:"YYYY-MM-DD"}` (dün … +7 gün) |
+| POST | `/me/check-in` | `{zone_payload \| zone, project_day_id?, lat?, lng?}` | `{message, assignment}`; `is_checked=false` (sorumlu doğrulayacak); zaten girişte 422 |
+| POST | `/me/break/start` · `/me/break/end` | `{project_day_id?}` | `{message, assignment}` |
 | GET | `/expense-categories/all` | – | `[{id, name, slug, icon, color}]` – `slug` gönderilir; erişilemezse sabit liste (food, transport, material, accommodation, other) |
 | POST | `/field/days/{id}/expenses` | multipart `{description, amount, category (slug), receipt_photo?}` | 201 `{message, expense, expenses}` |
 | DELETE | `/field/days/{id}/expenses/{expenseId}` | – | `{message}`; yalnızca `pending` masraf silinir, aksi halde 422 |
@@ -129,11 +197,17 @@ Notlar:
 - `check_out_time` cihaz saatinden UTC ISO (`…Z`) olarak gönderilir (backend `app.timezone=UTC`, `now()` ile tutarlı).
 - Gün sonu akışı (aşama C) sunucuda ayrı bir durum değildir; "Gün Sonu Akışını Başlat" yerel bayrak (`dayFlowProvider`) ile açılır ve gün `completed` olana kadar sürer.
 - 401 yanıtı alınınca token silinir ve giriş ekranına dönülür.
+- `personnel_assignments[].presence` gelmezse (eski backend) durum `check_in_time`/`check_out_time`'dan türetilir. `notCheckedIn` listesi *gelmedi* işaretlenenleri dışlar.
+- `/login` yanıtındaki `permissions` (ve `is_admin`) güvenli depoda önbelleklenir; çevrimdışı açılışta mod (sorumlu/personel) buna göre belirlenir.
+- Konum `accuracy` sunucuya tam sayı (metre) olarak yuvarlanır.
 
-Test hesabı (saha sorumlusu): `saha@esasgroup.com.tr` / `EsasSaha2026!`
+Test hesapları: saha sorumlusu `saha@esasgroup.com.tr` / `EsasSaha2026!` · personel modu `personel@esasgroup.com.tr` / `EsasPersonel2026!` (TV100 günü #5'e atanmış personel #3)
 
 ## Yapılacaklar
 
 - Firebase Cloud Messaging: `Firebase.initializeApp()` + FCM token → `NotificationsRepository.registerDevice()` (şu an no‑op). `main.dart` ve `notifications_repository.dart` içindeki `TODO(firebase)` işaretleri.
 - iOS NFC için `Runner.entitlements` içine *Near Field Communication Tag Reading* yeteneği eklenmeli (Apple Developer hesabı gerektirir); eklenmezse NFC butonu görünmez.
 - Çevrimdışı kuyruk (PROJE-PLANI §8) bu sürümde yok. Masraf girişi ve sahada ödeme (çıkışta) eklendi.
+- **Arka plan konumu yok**: konum paylaşımı yalnızca uygulama ön plandayken çalışır (iOS *whileInUse*, Android ön plan izni). Arka planda sürdürmek için `ACCESS_BACKGROUND_LOCATION` + ön plan servisi (Android) ve *Always* izni + `UIBackgroundModes: location` (iOS) ile ayrı bir sürüm gerekir; mağaza gerekçelendirmesi gerektirir.
+- Canlı harita (personel konumlarını haritada gösterme) mobilde yok; `personnel.location` olayları alınır ama yalnızca web canlı izleme ekranında çizilir.
+- Websocket bağlantısı uygulama arka plandayken işletim sistemi tarafından koparılabilir; öne dönünce otomatik yeniden bağlanır (geri çekilme).

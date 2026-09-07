@@ -207,6 +207,8 @@ class ActiveHubView extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
+            _PersonnelSection(detail: detail, actions: actions),
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
@@ -258,6 +260,84 @@ class ActiveHubView extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Personel durumu listesi: presence çipleri, uzun basma / ⋮ ile
+/// Gelmedi ↔ geri al, Mola başlat / Moladan döndü, Çıkış.
+class _PersonnelSection extends StatelessWidget {
+  const _PersonnelSection({required this.detail, required this.actions});
+
+  final ProjectDayDetail detail;
+  final DayFlowActions actions;
+
+  static int _rank(PersonnelAssignment p) {
+    if (p.isOnBreak) return 0;
+    if (p.needsVerification && !p.isCheckedOut) return 1;
+    if (p.isOnSite) return 2;
+    if (!p.isCheckedIn && !p.isAbsent) return 3;
+    if (p.isAbsent) return 4;
+    return 5;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final list = [...detail.personnel]..sort((a, b) => _rank(a).compareTo(_rank(b)));
+    final onSite = detail.onSite.where((p) => !p.isOnBreak).length;
+    final onBreak = detail.onBreak.length;
+    final absent = detail.absent.length;
+    final unverified = detail.awaitingVerification.length;
+    final summary = [
+      'Sahada $onSite',
+      if (onBreak > 0) 'Molada $onBreak',
+      if (absent > 0) 'Gelmedi $absent',
+      if (unverified > 0) 'Doğrulanmadı $unverified',
+    ].join(' · ');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('Personel (${detail.personnel.length})', style: theme.textTheme.titleMedium),
+            ),
+            Flexible(
+              child: Text(
+                summary,
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (list.isEmpty)
+          const Card(child: ListTile(title: Text('Bu güne atanmış personel yok')))
+        else
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (var i = 0; i < list.length; i++) ...[
+                  if (i > 0) const Divider(height: 1),
+                  PersonnelRow(
+                    assignment: list[i],
+                    onTap: () => actions.showPersonnelMenu(list[i]),
+                    onLongPress: () => actions.showPersonnelMenu(list[i]),
+                    trailing: IconButton(
+                      tooltip: 'Durum',
+                      icon: const Icon(Icons.more_vert),
+                      onPressed: () => actions.showPersonnelMenu(list[i]),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

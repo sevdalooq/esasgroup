@@ -8,6 +8,7 @@ import '../../features/field/screens/day_detail_screen.dart';
 import '../../features/field/screens/today_screen.dart';
 import '../../features/notifications/screens/notifications_screen.dart';
 import '../../features/scanner/scanner_screen.dart';
+import '../../features/self/screens/self_home_screen.dart';
 import '../config/app_config.dart';
 
 /// Auth durumu değişince router'ın redirect'i yeniden çalışsın diye
@@ -55,7 +56,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/',
-        builder: (context, state) => const TodayScreen(),
+        builder: (context, state) => const _HomeGate(),
         routes: [
           GoRoute(
             path: 'days/:id',
@@ -84,6 +85,18 @@ final routerProvider = Provider<GoRouter>((ref) {
     ),
   );
 });
+
+/// Ana ekran: `field.access` olan saha sorumlusu → Bugün;
+/// yalnızca `self.access` olan personel → Görevlerim.
+class _HomeGate extends ConsumerWidget {
+  const _HomeGate();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final personnelMode = ref.watch(authProvider.select((s) => s.isPersonnelMode));
+    return personnelMode ? const SelfHomeScreen() : const TodayScreen();
+  }
+}
 
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();

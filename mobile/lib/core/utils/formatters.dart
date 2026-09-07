@@ -188,3 +188,58 @@ String formatInputNumber(double value) {
   if (value == value.roundToDouble()) return value.toInt().toString();
   return value.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll('.', ',');
 }
+
+/// Personel durumu (`presence`) → Türkçe etiket.
+/// assigned · checked_in · on_break · checked_out · absent
+String presenceLabel(String presence) {
+  switch (presence) {
+    case 'assigned':
+    case '':
+      return 'Bekleniyor';
+    case 'checked_in':
+      return 'Sahada';
+    case 'on_break':
+      return 'Molada';
+    case 'checked_out':
+      return 'Çıkış yaptı';
+    case 'absent':
+      return 'Gelmedi';
+    default:
+      return presence;
+  }
+}
+
+Color presenceColor(String presence) {
+  switch (presence) {
+    case 'checked_in':
+      return const Color(0xFF2E7D32);
+    case 'on_break':
+      return const Color(0xFFF9A825);
+    case 'checked_out':
+      return const Color(0xFF546E7A);
+    case 'absent':
+      return const Color(0xFFB71C1C);
+    case 'assigned':
+    default:
+      return const Color(0xFF757575);
+  }
+}
+
+/// Moladan bu yana geçen süre: `12 dk`, `1 sa 05 dk`.
+String formatElapsed(DateTime? since, {DateTime? now}) {
+  if (since == null) return '';
+  final diff = (now ?? DateTime.now()).difference(since);
+  if (diff.isNegative) return '0 dk';
+  if (diff.inHours > 0) {
+    final m = diff.inMinutes % 60;
+    return '${diff.inHours} sa ${m.toString().padLeft(2, '0')} dk';
+  }
+  return '${diff.inMinutes} dk';
+}
+
+/// Telefon numarasını `tel:` URI'si için sadeleştirir (`0532 818 41 21` → `05328184121`).
+String? telUriFor(String? phone) {
+  if (phone == null) return null;
+  final digits = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+  return digits.isEmpty ? null : 'tel:$digits';
+}

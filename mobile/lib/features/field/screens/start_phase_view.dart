@@ -103,16 +103,15 @@ class _StartPhaseViewState extends ConsumerState<StartPhaseView> {
   }
 
   Widget _bottomBar(int step) {
-    final checkedIn = detail.checkedInCount;
     final total = detail.personnel.length;
     switch (step) {
       case 0:
-        final missing = total - checkedIn;
+        final missing = detail.notCheckedIn.length;
         return BottomActionBar(
           primaryLabel: 'Devam',
           onPrimary: _continueFromCheckIn,
           hint: missing > 0
-              ? '$missing personel henüz giriş yapmadı'
+              ? '$missing personel henüz giriş yapmadı${detail.absent.isNotEmpty ? ' · ${detail.absent.length} gelmedi' : ''}'
               : total == 0
                   ? 'Bu güne atanmış personel yok; QR ile ekleyebilirsiniz'
                   : 'Tüm personel giriş yaptı',
@@ -146,7 +145,8 @@ class _StartPhaseViewState extends ConsumerState<StartPhaseView> {
         .where((p) => q.isEmpty || p.displayName.toLowerCase().contains(q))
         .toList()
       ..sort((a, b) {
-        // Giriş yapmamışlar üstte.
+        // Giriş yapmamışlar üstte, gelmeyenler en altta.
+        if (a.isAbsent != b.isAbsent) return a.isAbsent ? 1 : -1;
         if (a.isCheckedIn != b.isCheckedIn) return a.isCheckedIn ? 1 : -1;
         return 0;
       });
@@ -208,14 +208,23 @@ class _StartPhaseViewState extends ConsumerState<StartPhaseView> {
           for (final p in list) ...[
             PersonnelRow(
               assignment: p,
-              onTap: p.isCheckedIn ? null : () => _actions.checkInManual(p),
-              trailing: p.isCheckedIn
-                  ? const Icon(Icons.check_circle, color: kSuccessGreen)
-                  : FilledButton.tonal(
-                      onPressed: () => _actions.checkInManual(p),
-                      style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
-                      child: const Text('Giriş'),
-                    ),
+              onTap: p.isCheckedIn || p.isAbsent
+                  ? () => _actions.showPersonnelMenu(p)
+                  : () => _actions.checkInManual(p),
+              onLongPress: () => _actions.showPersonnelMenu(p),
+              trailing: p.isAbsent
+                  ? IconButton(
+                      tooltip: 'Durum',
+                      icon: const Icon(Icons.more_vert),
+                      onPressed: () => _actions.showPersonnelMenu(p),
+                    )
+                  : p.isCheckedIn
+                      ? const Icon(Icons.check_circle, color: kSuccessGreen)
+                      : FilledButton.tonal(
+                          onPressed: () => _actions.checkInManual(p),
+                          style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                          child: const Text('Giriş'),
+                        ),
             ),
             const Divider(height: 1),
           ],

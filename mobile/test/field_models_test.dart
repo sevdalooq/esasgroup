@@ -258,6 +258,81 @@ void main() {
     });
   });
 
+  group('Presence (gelmedi / mola / doğrulama)', () {
+    test('presence, break_started_at, break_minutes okunur; is_checked=false → Doğrulanmadı', () {
+      final self = PersonnelAssignment.fromJson({
+        ...kAssignmentJson,
+        'check_in_time': '2026-09-07T19:05:00.000000Z',
+        'is_checked': false,
+        'presence': 'checked_in',
+        'break_started_at': null,
+        'break_minutes': 15,
+      });
+      expect(self.presence, 'checked_in');
+      expect(self.effectivePresence, 'checked_in');
+      expect(self.isCheckedIn, isTrue);
+      expect(self.needsVerification, isTrue);
+      expect(self.breakMinutes, 15);
+      expect(self.isOnBreak, isFalse);
+
+      final onBreak = PersonnelAssignment.fromJson({
+        ...kAssignmentJson,
+        'check_in_time': '2026-09-07T19:05:00.000000Z',
+        'is_checked': true,
+        'presence': 'on_break',
+        'break_started_at': '2026-09-07T19:30:00.000000Z',
+      });
+      expect(onBreak.isOnBreak, isTrue);
+      expect(onBreak.isOnSite, isTrue);
+      expect(onBreak.needsVerification, isFalse);
+      expect(onBreak.breakStartedAt, isNotNull);
+      expect(onBreak.breakStartedAt!.isUtc, isFalse); // yerel saate çevrilir
+
+      final absent = PersonnelAssignment.fromJson({...kAssignmentJson, 'presence': 'absent'});
+      expect(absent.isAbsent, isTrue);
+      expect(absent.isCheckedIn, isFalse);
+
+      // presence gelmezse saatlerden türetilir (eski backend).
+      expect(PersonnelAssignment.fromJson(kAssignmentJson).effectivePresence, 'assigned');
+      expect(
+        PersonnelAssignment.fromJson({...kAssignmentJson, 'check_in_time': '2026-09-07 15:00:00', 'check_out_time': '2026-09-07 20:00:00'})
+            .effectivePresence,
+        'checked_out',
+      );
+    });
+
+    test('gün listeleri: notCheckedIn gelmeyenleri dışlar; absent/onBreak/awaitingVerification', () {
+      final d = ProjectDayDetail.fromJson({
+        'day': {
+          'id': 5,
+          'status': 'active',
+          'personnel_assignments': [
+            kAssignmentJson,
+            {...kAssignmentJson, 'id': 62, 'personnel_id': 4, 'presence': 'absent'},
+            {...kAssignmentJson, 'id': 63, 'personnel_id': 5, 'presence': 'on_break', 'check_in_time': '2026-09-07T15:00:00.000000Z', 'is_checked': true, 'break_started_at': '2026-09-07T16:00:00.000000Z'},
+            {...kAssignmentJson, 'id': 64, 'personnel_id': 6, 'presence': 'checked_in', 'check_in_time': '2026-09-07T15:00:00.000000Z', 'is_checked': false},
+          ],
+        },
+      });
+      expect(d.notCheckedIn.map((p) => p.id), [61]);
+      expect(d.absent.map((p) => p.id), [62]);
+      expect(d.onBreak.map((p) => p.id), [63]);
+      expect(d.awaitingVerification.map((p) => p.id), [64]);
+      expect(d.onSite.map((p) => p.id), [63, 64]);
+    });
+
+    test('AssignmentResult (absent / break yanıtı) {message, assignment, summary}', () {
+      final r = AssignmentResult.fromJson({
+        'message': 'Mustafa Demir gelmedi olarak işaretlendi.',
+        'assignment': {...kAssignmentJson, 'id': 62, 'presence': 'absent'},
+        'summary': {'personnel_count': 12, 'checked_in_count': 0},
+      });
+      expect(r.message, contains('gelmedi'));
+      expect(r.assignment!.isAbsent, isTrue);
+      expect(r.summary!.personnelCount, 12);
+    });
+  });
+
   group('Aşama belirleme', () {
     ProjectDayDetail withStatus(String s) => ProjectDayDetail(id: 1, status: s);
 

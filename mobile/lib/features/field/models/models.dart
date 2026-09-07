@@ -120,6 +120,9 @@ class PersonnelAssignment {
     this.paymentMethod,
     this.assignedInventory = const [],
     this.notes,
+    this.presence = '',
+    this.breakStartedAt,
+    this.breakMinutes = 0,
   });
 
   final int id;
@@ -150,11 +153,36 @@ class PersonnelAssignment {
   final List<InventoryAssignment> assignedInventory;
   final String? notes;
 
+  /// Sunucudaki `presence`: assigned | checked_in | on_break | checked_out | absent.
+  /// Boş gelirse giriş/çıkış saatlerinden türetilir ([effectivePresence]).
+  final String presence;
+
+  /// Mola başlangıcı (`on_break` iken dolu).
+  final DateTime? breakStartedAt;
+
+  /// Bugün tamamlanan toplam mola süresi (dakika).
+  final int breakMinutes;
+
   bool get isCheckedIn => isChecked || (checkInTime?.isNotEmpty ?? false);
   bool get isCheckedOut => checkOutTime?.isNotEmpty ?? false;
 
-  /// Giriş yapmış ama henüz çıkış yapmamış.
+  /// Giriş yapmış ama henüz çıkış yapmamış (molada olanlar dahil).
   bool get isOnSite => isCheckedIn && !isCheckedOut;
+
+  bool get isAbsent => presence == 'absent';
+  bool get isOnBreak => presence == 'on_break' && !isCheckedOut;
+
+  /// Personel kendi telefonundan giriş yaptı, saha sorumlusu henüz doğrulamadı
+  /// (`check_in_time` dolu, `is_checked=false`).
+  bool get needsVerification => (checkInTime?.isNotEmpty ?? false) && !isChecked;
+
+  /// Gösterilecek durum: sunucu `presence` verirse o, yoksa saatlerden türetilir.
+  String get effectivePresence {
+    if (presence.isNotEmpty) return presence;
+    if (isCheckedOut) return 'checked_out';
+    if (isCheckedIn) return 'checked_in';
+    return 'assigned';
+  }
 
   /// Mesai saat ücreti önerisi: kayıtlı ücret yoksa yevmiye / 8.
   double get suggestedOvertimeRate =>
@@ -213,6 +241,9 @@ class PersonnelAssignment {
           .map(InventoryAssignment.fromJson)
           .toList(),
       notes: asStringOrNull(json['notes']),
+      presence: asString(json['presence']),
+      breakStartedAt: asDateTime(json['break_started_at']),
+      breakMinutes: asInt(json['break_minutes']),
     );
   }
 }
@@ -428,9 +459,19 @@ class ProjectDayDetail {
   int get deliveredCount => inventory.where((i) => i.isDelivered).length;
   int get returnedCount => inventory.where((i) => i.isReturned).length;
 
-  /// Giriş yapmamış personel.
+  /// Giriş yapmamış personel ("Gelmedi" işaretlenenler hariç).
   List<PersonnelAssignment> get notCheckedIn =>
-      personnel.where((p) => !p.isCheckedIn).toList();
+      personnel.where((p) => !p.isCheckedIn && !p.isAbsent).toList();
+
+  /// "Gelmedi" işaretlenen personel.
+  List<PersonnelAssignment> get absent => personnel.where((p) => p.isAbsent).toList();
+
+  /// Molada olan personel.
+  List<PersonnelAssignment> get onBreak => personnel.where((p) => p.isOnBreak).toList();
+
+  /// Kendi telefonundan giriş yapıp doğrulama bekleyen personel.
+  List<PersonnelAssignment> get awaitingVerification =>
+      personnel.where((p) => p.needsVerification && !p.isCheckedOut).toList();
 
   /// Sahada olan (giriş yapmış, çıkış yapmamış) personel.
   List<PersonnelAssignment> get onSite => personnel.where((p) => p.isOnSite).toList();
@@ -738,6 +779,9 @@ class CheckOutRequest {
           'inventory_returns': inventoryReturns.map((r) => r.toJson()).toList(),
       };
 }
+
+/// Check-out / mola / gelmedi yanıtı: `{message, assignment, summary}`.
+typedef AssignmentResult = CheckOutResult;
 
 /// Check-out yanıtı: `{message, assignment (assigned_inventory ile), summary}`.
 class CheckOutResult {

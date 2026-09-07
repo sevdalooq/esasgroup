@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_exception.dart';
+import '../../../core/realtime/connection_dot.dart';
+import '../../../core/realtime/realtime_events.dart';
+import '../../../core/realtime/realtime_provider.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/ui_helpers.dart';
+import '../../auth/auth_provider.dart';
 import '../field_providers.dart';
 import '../models/models.dart';
 import 'active_hub_view.dart';
@@ -18,15 +24,57 @@ import 'start_phase_view.dart';
 /// - **B · Etkinlik Devam Ediyor** (`active`): KPI + işlemler + "Gün Sonu Akışını Başlat"
 /// - **C · Gün Sonu** (`active` + yerel bayrak): Personel Çıkışı → Özet → Fotoğraf → Günü Bitir
 /// - **D · Tamamlandı** (`completed`): salt okunur özet
-class DayDetailScreen extends ConsumerWidget {
+///
+/// `private-day.{id}` kanalına abone olur: her `day.updated` olayında günü
+/// sessizce yeniden çeker; olayı başka biri yaptıysa kısa bir bildirim gösterir.
+class DayDetailScreen extends ConsumerStatefulWidget {
   const DayDetailScreen({super.key, required this.dayId});
 
   final int dayId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DayDetailScreen> createState() => _DayDetailScreenState();
+}
+
+class _DayDetailScreenState extends ConsumerState<DayDetailScreen> {
+  Timer? _debounce;
+
+  int get dayId => widget.dayId;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleRefresh() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      ref.invalidate(dayDetailProvider(dayId));
+      ref.invalidate(todayProvider);
+    });
+  }
+
+  void _onEvent(PusherEvent e) {
+    final update = DayUpdatedEvent.fromPusher(e);
+    if (update == null) return; // personnel.location vb. – gün verisini değiştirmez
+    _scheduleRefresh();
+    final me = ref.read(authProvider).user?.id;
+    final message = update.toastMessage;
+    if (message != null && update.actorId != null && update.actorId != me) {
+      showSnack(context, message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(dayDetailProvider(dayId));
     final flow = ref.watch(dayFlowProvider(dayId));
+    ref.listen(dayEventsProvider(dayId), (_, next) {
+      final e = next.valueOrNull;
+      if (e != null) _onEvent(e);
+    });
     final detail = async.valueOrNull;
     final phase = detail == null ? null : phaseOf(detail, flow);
 
@@ -54,6 +102,7 @@ class DayDetailScreen extends ConsumerWidget {
           ],
         ),
         actions: [
+          const ConnectionDot(),
           if (detail != null)
             Padding(
               padding: const EdgeInsets.only(right: 12),

@@ -168,6 +168,38 @@ class FieldRepository {
     return _message(res);
   }
 
+  // ---------------- Personel durumu (gelmedi / mola) ----------------
+
+  /// POST /field/days/{id}/absent {assignment_id, absent} → {message, assignment, summary}
+  Future<AssignmentResult> markAbsent(int dayId, int assignmentId, {required bool absent}) async {
+    final res = await _api.post(
+      '/field/days/$dayId/absent',
+      data: {'assignment_id': assignmentId, 'absent': absent},
+    );
+    return AssignmentResult.fromJson(asMap(res.data));
+  }
+
+  /// POST /field/days/{id}/break/start {assignment_id} → {message, assignment, summary}
+  Future<AssignmentResult> breakStart(int dayId, int assignmentId, {String? reason}) async {
+    final res = await _api.post(
+      '/field/days/$dayId/break/start',
+      data: {
+        'assignment_id': assignmentId,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      },
+    );
+    return AssignmentResult.fromJson(asMap(res.data));
+  }
+
+  /// POST /field/days/{id}/break/end {assignment_id} → {message, assignment, summary}
+  Future<AssignmentResult> breakEnd(int dayId, int assignmentId) async {
+    final res = await _api.post(
+      '/field/days/$dayId/break/end',
+      data: {'assignment_id': assignmentId},
+    );
+    return AssignmentResult.fromJson(asMap(res.data));
+  }
+
   // ---------------- Masraflar ----------------
 
   /// GET /expense-categories/all → [{id, name, slug, icon, color}]

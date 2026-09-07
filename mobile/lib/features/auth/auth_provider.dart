@@ -12,6 +12,9 @@ import 'models/app_user.dart';
 
 enum AuthStatus { loading, authenticated, unauthenticated }
 
+/// Uygulama modu: saha sorumlusu (`field.access`) ya da personel (`self.access`).
+enum AppMode { supervisor, personnel }
+
 class AuthState {
   const AuthState({
     required this.status,
@@ -19,6 +22,8 @@ class AuthState {
     this.permissions = const [],
     this.isAdmin = false,
     this.baseUrl = '',
+    this.wsUrl = '',
+    this.wsKey = AppConfig.reverbAppKey,
     this.lastEmail,
   });
 
@@ -27,12 +32,29 @@ class AuthState {
   final List<String> permissions;
   final bool isAdmin;
   final String baseUrl;
+
+  /// Reverb adresi `ws://host:port` (boşsa API adresinden türetilir).
+  final String wsUrl;
+
+  /// Reverb uygulama anahtarı.
+  final String wsKey;
   final String? lastEmail;
 
   bool get isAuthenticated => status == AuthStatus.authenticated;
 
   bool hasPermission(String permission) =>
       isAdmin || permissions.contains(permission);
+
+  /// `field.access` yoksa ama `self.access` varsa personel modu.
+  AppMode get mode => !hasPermission('field.access') && hasPermission('self.access')
+      ? AppMode.personnel
+      : AppMode.supervisor;
+
+  bool get isPersonnelMode => mode == AppMode.personnel;
+
+  /// Etkin websocket adresi.
+  String get effectiveWsUrl =>
+      wsUrl.isEmpty ? AppConfig.defaultWsUrlFor(baseUrl) : wsUrl;
 
   AuthState copyWith({
     AuthStatus? status,
@@ -41,6 +63,8 @@ class AuthState {
     List<String>? permissions,
     bool? isAdmin,
     String? baseUrl,
+    String? wsUrl,
+    String? wsKey,
     String? lastEmail,
   }) {
     return AuthState(
@@ -49,6 +73,8 @@ class AuthState {
       permissions: permissions ?? this.permissions,
       isAdmin: isAdmin ?? this.isAdmin,
       baseUrl: baseUrl ?? this.baseUrl,
+      wsUrl: wsUrl ?? this.wsUrl,
+      wsKey: wsKey ?? this.wsKey,
       lastEmail: lastEmail ?? this.lastEmail,
     );
   }
@@ -76,6 +102,8 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> _restore() async {
     final baseUrl = await _storage.readBaseUrl() ?? AppConfig.defaultBaseUrl;
     _api.baseUrl = baseUrl;
+    final wsUrl = await _storage.readWsUrl() ?? '';
+    final wsKey = await _storage.readWsKey() ?? AppConfig.reverbAppKey;
     final lastEmail = await _storage.readLastEmail();
     final token = await _storage.readToken();
 
@@ -83,76 +111,105 @@ class AuthNotifier extends Notifier<AuthState> {
       state = AuthState(
         status: AuthStatus.unauthenticated,
         baseUrl: baseUrl,
+        wsUrl: wsUrl,
+        wsKey: wsKey,
         lastEmail: lastEmail,
       );
       return;
     }
     _api.token = token;
 
-    AppUser? cachedUser;
+    // Önbellek: `{user, permissions, is_admin}` (eski sürümde düz kullanıcı nesnesi).
+    AuthPayload? cached;
     final cachedJson = await _storage.readUserJson();
     if (cachedJson != null) {
       try {
-        cachedUser = AppUser.fromJson(
+        cached = AuthPayload.fromJson(
           (jsonDecode(cachedJson) as Map).cast<String, dynamic>(),
         );
       } catch (_) {
-        cachedUser = null;
+        cached = null;
       }
     }
 
     try {
       final me = await _repo.me();
-      await _storage.writeUserJson(jsonEncode(me.user.toJson()));
+      await _storage.writeUserJson(jsonEncode(_cacheJson(me)));
       state = AuthState(
         status: AuthStatus.authenticated,
         user: me.user,
         permissions: me.permissions,
         isAdmin: me.isAdmin,
         baseUrl: baseUrl,
+        wsUrl: wsUrl,
+        wsKey: wsKey,
         lastEmail: lastEmail,
       );
     } on ApiException catch (e) {
-      if (e.isUnauthorized || cachedUser == null) {
+      if (e.isUnauthorized || cached == null) {
         await _storage.clearSession();
         _api.token = null;
         state = AuthState(
           status: AuthStatus.unauthenticated,
           baseUrl: baseUrl,
+          wsUrl: wsUrl,
+          wsKey: wsKey,
           lastEmail: lastEmail,
         );
       } else {
         // Ağ hatası: önbellekteki kullanıcıyla devam et (çevrimdışı tolerans).
         state = AuthState(
           status: AuthStatus.authenticated,
-          user: cachedUser,
+          user: cached.user,
+          permissions: cached.permissions,
+          isAdmin: cached.isAdmin,
           baseUrl: baseUrl,
+          wsUrl: wsUrl,
+          wsKey: wsKey,
           lastEmail: lastEmail,
         );
       }
     } catch (_) {
       state = AuthState(
-        status: cachedUser == null
+        status: cached == null
             ? AuthStatus.unauthenticated
             : AuthStatus.authenticated,
-        user: cachedUser,
+        user: cached?.user,
+        permissions: cached?.permissions ?? const [],
+        isAdmin: cached?.isAdmin ?? false,
         baseUrl: baseUrl,
+        wsUrl: wsUrl,
+        wsKey: wsKey,
         lastEmail: lastEmail,
       );
     }
   }
 
+  Map<String, dynamic> _cacheJson(AuthPayload p) => {
+        'user': p.user.toJson(),
+        'permissions': p.permissions,
+        'is_admin': p.isAdmin,
+      };
+
   /// Giriş yapar; hata durumunda [ApiException] fırlatır.
+  /// [wsUrl] boş bırakılırsa API adresinden türetilir; [wsKey] boşsa
+  /// derleme zamanı anahtarı ([AppConfig.reverbAppKey]) kullanılır.
   Future<void> login({
     required String email,
     required String password,
     required String serverUrl,
+    String wsUrl = '',
+    String wsKey = '',
   }) async {
     final baseUrl = AppConfig.normalizeBaseUrl(serverUrl);
+    final normalizedWs = wsUrl.trim().isEmpty ? '' : AppConfig.normalizeWsUrl(wsUrl);
+    final key = wsKey.trim().isEmpty ? AppConfig.reverbAppKey : wsKey.trim();
     _api.baseUrl = baseUrl;
     _api.token = null;
     await _storage.writeBaseUrl(baseUrl);
-    state = state.copyWith(baseUrl: baseUrl);
+    await _storage.writeWsUrl(normalizedWs);
+    await _storage.writeWsKey(key == AppConfig.reverbAppKey ? null : key);
+    state = state.copyWith(baseUrl: baseUrl, wsUrl: normalizedWs, wsKey: key);
 
     final payload = await _repo.login(email.trim(), password);
     final token = payload.token;
@@ -162,7 +219,7 @@ class AuthNotifier extends Notifier<AuthState> {
 
     _api.token = token;
     await _storage.writeToken(token);
-    await _storage.writeUserJson(jsonEncode(payload.user.toJson()));
+    await _storage.writeUserJson(jsonEncode(_cacheJson(payload)));
     await _storage.writeLastEmail(email.trim());
 
     state = AuthState(
@@ -171,6 +228,8 @@ class AuthNotifier extends Notifier<AuthState> {
       permissions: payload.permissions,
       isAdmin: payload.isAdmin,
       baseUrl: baseUrl,
+      wsUrl: normalizedWs,
+      wsKey: key,
       lastEmail: email.trim(),
     );
 
@@ -198,6 +257,8 @@ class AuthNotifier extends Notifier<AuthState> {
     state = AuthState(
       status: AuthStatus.unauthenticated,
       baseUrl: state.baseUrl,
+      wsUrl: state.wsUrl,
+      wsKey: state.wsKey,
       lastEmail: state.lastEmail,
     );
   }

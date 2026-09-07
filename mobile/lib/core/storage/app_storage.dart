@@ -14,8 +14,11 @@ class AppStorage {
 
   static const _kToken = 'auth_token';
   static const _kBaseUrl = 'base_url';
+  static const _kWsUrl = 'ws_url';
+  static const _kWsKey = 'ws_key';
   static const _kUser = 'auth_user';
   static const _kLastEmail = 'last_email';
+  static const _kLocationSharing = 'location_sharing';
 
   Future<String?> readToken() => _read(_kToken);
   Future<void> writeToken(String? token) => _write(_kToken, token);
@@ -23,11 +26,23 @@ class AppStorage {
   Future<String?> readBaseUrl() => _read(_kBaseUrl);
   Future<void> writeBaseUrl(String? url) => _write(_kBaseUrl, url);
 
+  /// Websocket (Reverb) adresi `ws://host:port` ve uygulama anahtarı.
+  Future<String?> readWsUrl() => _read(_kWsUrl);
+  Future<void> writeWsUrl(String? url) => _write(_kWsUrl, url);
+  Future<String?> readWsKey() => _read(_kWsKey);
+  Future<void> writeWsKey(String? key) => _write(_kWsKey, key);
+
+  /// `{user, permissions, is_admin}` JSON'u (eski sürümlerde düz kullanıcı).
   Future<String?> readUserJson() => _read(_kUser);
   Future<void> writeUserJson(String? json) => _write(_kUser, json);
 
   Future<String?> readLastEmail() => _read(_kLastEmail);
   Future<void> writeLastEmail(String? email) => _write(_kLastEmail, email);
+
+  /// Personel modunda "Konum paylaşımı" anahtarının son durumu.
+  Future<bool> readLocationSharing() async => (await _read(_kLocationSharing)) == '1';
+  Future<void> writeLocationSharing(bool enabled) =>
+      _write(_kLocationSharing, enabled ? '1' : '0');
 
   Future<void> clearSession() async {
     await writeToken(null);

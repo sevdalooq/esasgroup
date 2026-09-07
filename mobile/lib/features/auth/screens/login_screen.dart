@@ -17,6 +17,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   late final TextEditingController _emailCtrl;
   final _passwordCtrl = TextEditingController();
   late final TextEditingController _serverCtrl;
+  late final TextEditingController _wsCtrl;
+  late final TextEditingController _wsKeyCtrl;
 
   bool _showServer = false;
   bool _obscure = true;
@@ -31,8 +33,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     _serverCtrl = TextEditingController(
       text: auth.baseUrl.isEmpty ? AppConfig.defaultBaseUrl : auth.baseUrl,
     );
-    _showServer = auth.baseUrl.isNotEmpty &&
-        auth.baseUrl != AppConfig.defaultBaseUrl;
+    _wsCtrl = TextEditingController(text: auth.wsUrl);
+    _wsKeyCtrl = TextEditingController(
+      text: auth.wsKey == AppConfig.reverbAppKey ? '' : auth.wsKey,
+    );
+    _showServer = (auth.baseUrl.isNotEmpty &&
+            auth.baseUrl != AppConfig.defaultBaseUrl) ||
+        auth.wsUrl.isNotEmpty ||
+        _wsKeyCtrl.text.isNotEmpty;
   }
 
   @override
@@ -40,8 +48,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _serverCtrl.dispose();
+    _wsCtrl.dispose();
+    _wsKeyCtrl.dispose();
     super.dispose();
   }
+
+  /// Sunucu alanına göre canlı bağlantı için önerilen adres (ipucu).
+  String get _wsHint => AppConfig.defaultWsUrlFor(
+        AppConfig.normalizeBaseUrl(_serverCtrl.text),
+      );
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
@@ -55,6 +70,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             email: _emailCtrl.text,
             password: _passwordCtrl.text,
             serverUrl: _serverCtrl.text,
+            wsUrl: _wsCtrl.text,
+            wsKey: _wsKeyCtrl.text,
           );
       // Yönlendirme router redirect'i tarafından yapılır.
     } on ApiException catch (e) {
@@ -153,24 +170,63 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         firstChild: const SizedBox(width: double.infinity),
                         secondChild: Padding(
                           padding: const EdgeInsets.only(bottom: 8),
-                          child: TextFormField(
-                            controller: _serverCtrl,
-                            keyboardType: TextInputType.url,
-                            autocorrect: false,
-                            decoration: InputDecoration(
-                              labelText: 'Sunucu adresi',
-                              hintText: AppConfig.defaultBaseUrl,
-                              helperText:
-                                  'Örn. http://192.168.1.10:8000/api – boş bırakılırsa varsayılan kullanılır.',
-                              helperMaxLines: 2,
-                              prefixIcon: const Icon(Icons.dns_outlined),
-                              suffixIcon: IconButton(
-                                tooltip: 'Varsayılana dön',
-                                icon: const Icon(Icons.restart_alt),
-                                onPressed: () => _serverCtrl.text =
-                                    AppConfig.defaultBaseUrl,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              TextFormField(
+                                controller: _serverCtrl,
+                                keyboardType: TextInputType.url,
+                                autocorrect: false,
+                                onChanged: (_) => setState(() {}),
+                                decoration: InputDecoration(
+                                  labelText: 'Sunucu adresi',
+                                  hintText: AppConfig.defaultBaseUrl,
+                                  helperText:
+                                      'Örn. http://192.168.1.10:8000/api – boş bırakılırsa varsayılan kullanılır.',
+                                  helperMaxLines: 2,
+                                  prefixIcon: const Icon(Icons.dns_outlined),
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Varsayılana dön',
+                                    icon: const Icon(Icons.restart_alt),
+                                    onPressed: () => setState(
+                                      () => _serverCtrl.text = AppConfig.defaultBaseUrl,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _wsCtrl,
+                                keyboardType: TextInputType.url,
+                                autocorrect: false,
+                                decoration: InputDecoration(
+                                  labelText: 'Canlı bağlantı (Reverb) adresi',
+                                  hintText: _wsHint,
+                                  helperText:
+                                      'ws://host:port – boş bırakılırsa sunucu adresinin ana makinesi ve ${AppConfig.reverbPort} portu kullanılır.',
+                                  helperMaxLines: 2,
+                                  prefixIcon: const Icon(Icons.sensors),
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Temizle',
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () => _wsCtrl.clear(),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _wsKeyCtrl,
+                                autocorrect: false,
+                                decoration: InputDecoration(
+                                  labelText: 'Reverb uygulama anahtarı',
+                                  hintText: AppConfig.reverbAppKey,
+                                  helperText:
+                                      'Backend .env → REVERB_APP_KEY. Boş bırakılırsa derleme anahtarı kullanılır.',
+                                  helperMaxLines: 2,
+                                  prefixIcon: const Icon(Icons.key_outlined),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),

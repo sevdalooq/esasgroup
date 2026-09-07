@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_exception.dart';
+import '../../../core/realtime/connection_dot.dart';
+import '../../../core/realtime/realtime_provider.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/ui_helpers.dart';
 import '../../auth/auth_provider.dart';
@@ -10,13 +14,38 @@ import '../../notifications/notifications_provider.dart';
 import '../field_providers.dart';
 import '../models/models.dart';
 
-class TodayScreen extends ConsumerWidget {
+/// Bugünkü görevler. `private-live` kanalına abone olur; her olayda
+/// (kısa bir birleştirme süresiyle) listeyi sessizce yeniler.
+class TodayScreen extends ConsumerStatefulWidget {
   const TodayScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TodayScreen> createState() => _TodayScreenState();
+}
+
+class _TodayScreenState extends ConsumerState<TodayScreen> {
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleRefresh() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) ref.invalidate(todayProvider);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(todayProvider);
     final user = ref.watch(authProvider.select((s) => s.user));
+    ref.listen(liveEventsProvider, (_, next) {
+      if (next.hasValue) _scheduleRefresh();
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -31,6 +60,7 @@ class TodayScreen extends ConsumerWidget {
           ],
         ),
         actions: [
+          const ConnectionDot(),
           const _NotificationBell(),
           PopupMenuButton<String>(
             tooltip: 'Hesap',
@@ -74,6 +104,7 @@ class TodayScreen extends ConsumerWidget {
         ],
       ),
       body: async.when(
+        skipLoadingOnRefresh: true,
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => ErrorView(
           message: errorMessage(e),

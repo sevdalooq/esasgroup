@@ -43,6 +43,12 @@
 	<string>QR kodlarını okutmak ve gün/giriş fotoğrafı çekmek için kamera erişimi gerekir.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Galeriden fotoğraf seçmek için erişim gerekir.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Görev sırasında konumunuzu saha sorumlusuyla paylaşmak için (yalnızca uygulama açıkken) konum erişimi gerekir.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+	</array>
 	<key>NFCReaderUsageDescription</key>
 	<string>Envanter ve personel NFC etiketlerini okumak için NFC erişimi gerekir.</string>
 	<key>NSAppTransportSecurity</key>
