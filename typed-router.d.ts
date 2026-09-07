@@ -44,8 +44,6 @@ declare module 'vue-router/auto-routes' {
     'personnel-create': RouteRecordInfo<'personnel-create', '/personnel/create', Record<never, never>, Record<never, never>>,
     'projects': RouteRecordInfo<'projects', '/projects', Record<never, never>, Record<never, never>>,
     'projects-id': RouteRecordInfo<'projects-id', '/projects/:id', { id: ParamValue<true> }, { id: ParamValue<false> }>,
-    'projects-id-components-day-end-wizard': RouteRecordInfo<'projects-id-components-day-end-wizard', '/projects/:id/components/DayEndWizard', { id: ParamValue<true> }, { id: ParamValue<false> }>,
-    'projects-id-components-day-start-wizard': RouteRecordInfo<'projects-id-components-day-start-wizard', '/projects/:id/components/DayStartWizard', { id: ParamValue<true> }, { id: ParamValue<false> }>,
     'projects-id-edit': RouteRecordInfo<'projects-id-edit', '/projects/:id/edit', { id: ParamValue<true> }, { id: ParamValue<false> }>,
     'projects-create': RouteRecordInfo<'projects-create', '/projects/create', Record<never, never>, Record<never, never>>,
   }

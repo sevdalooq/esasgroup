@@ -60,9 +60,6 @@ const login = async () => {
       is_admin: res.is_admin,
     })
 
-    // Also store in cookies for SSR compatibility
-    useCookie('userData').value = res.user
-    useCookie('accessToken').value = res.token
 
     // Redirect to dashboard
     router.push('/')
@@ -77,7 +74,7 @@ const login = async () => {
       errorMessage.value = Object.values(errors).flat().join(', ')
     }
     else {
-      errorMessage.value = 'Giris yapilirken bir hata olustu'
+      errorMessage.value = 'Giriş yapılırken bir hata oluştu'
     }
   }
   finally {

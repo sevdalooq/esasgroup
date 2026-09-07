@@ -68,7 +68,7 @@ class DashboardController extends Controller
         // Proje sayilari
         if ($isAdmin || $user->hasPermission('projects.view')) {
             $stats['total_projects'] = Project::count();
-            $stats['active_projects'] = Project::whereIn('status', ['draft', 'confirmed', 'active'])->count();
+            $stats['active_projects'] = Project::whereIn('status', ['pending', 'approved', 'active'])->count();
             $stats['completed_projects'] = Project::where('status', 'completed')->count();
         }
 
@@ -102,7 +102,7 @@ class DashboardController extends Controller
                       ->whereDate('date', '<=', now()->addDays(7))
                       ->orderBy('date');
             }])
-            ->whereIn('status', ['confirmed', 'active'])
+            ->whereIn('status', ['approved', 'active'])
             ->orderBy('start_date')
             ->limit(5)
             ->get()
@@ -126,7 +126,7 @@ class DashboardController extends Controller
     private function getUpcomingProjects()
     {
         return Project::with('customer:id,name')
-            ->where('status', 'confirmed')
+            ->where('status', 'approved')
             ->where('start_date', '>', now())
             ->where('start_date', '<=', now()->addDays(14))
             ->orderBy('start_date')

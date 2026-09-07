@@ -12,10 +12,20 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 class Personnel extends Model
 {
     use HasFactory, SoftDeletes;
+    use \App\Models\Concerns\HasQrCode;
+
+    public const QR_PREFIX = 'PER';
 
     protected $table = 'personnel';
 
     protected $fillable = [
+        'qr_code',
+        'user_id',
+        'source',
+        'applicant_status',
+        'applied_at',
+        'applicant_note',
+        'city',
         'group_id',
         'personnel_group_id',
         'first_name',
@@ -99,6 +109,7 @@ class Personnel extends Model
         'birth_date' => 'date',
         'default_wage' => 'decimal:2',
         'is_active' => 'boolean',
+        'applied_at' => 'datetime',
         'height' => 'integer',
         'weight' => 'integer',
         'has_driver_license' => 'boolean',
@@ -119,7 +130,7 @@ class Personnel extends Model
         'earliest_start_date' => 'date',
     ];
 
-    protected $appends = ['full_name'];
+    protected $appends = ['full_name', 'qr_payload'];
 
     protected $hidden = ['tc_no'];
 
@@ -235,5 +246,26 @@ class Personnel extends Model
     public function getBalanceAttribute(): float
     {
         return $this->total_debit - $this->total_credit;
+    }
+
+    public function documents(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PersonnelDocument::class);
+    }
+
+    public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /** Sadece onaylı (aday olmayan) personel */
+    public function scopeActiveStaff($query)
+    {
+        return $query->whereNull('applicant_status')->orWhere('applicant_status', 'approved');
+    }
+
+    public function scopeApplicants($query)
+    {
+        return $query->whereNotNull('applicant_status');
     }
 }

@@ -8,9 +8,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ZoneOption extends Model
 {
-    use HasFactory;
+    use HasFactory, \App\Models\Concerns\HasQrCode;
+
+    public const QR_PREFIX = 'ZONE';
+
+    protected $appends = ['qr_payload'];
 
     protected $fillable = [
+        'qr_code',
         'project_id',
         'name',
         'usage_count',

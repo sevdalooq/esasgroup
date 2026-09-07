@@ -22,7 +22,7 @@ class ExpenseCategoriesSeeder extends Seeder
                 'sort_order' => 1,
             ],
             [
-                'name' => 'Ulasim',
+                'name' => 'Ulaşım',
                 'slug' => 'transport',
                 'icon' => 'tabler-car',
                 'color' => 'info',
@@ -46,7 +46,7 @@ class ExpenseCategoriesSeeder extends Seeder
                 'sort_order' => 4,
             ],
             [
-                'name' => 'Diger',
+                'name' => 'Diğer',
                 'slug' => 'other',
                 'icon' => 'tabler-dots',
                 'color' => 'default',

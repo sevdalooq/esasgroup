@@ -18,11 +18,11 @@ class CheckPermission
         $user = $request->user();
 
         if (!$user) {
-            return response()->json(['message' => 'Oturum acilmamis'], 401);
+            return response()->json(['message' => 'Oturum açılmamış'], 401);
         }
 
         if (!$user->hasPermission($permission)) {
-            return response()->json(['message' => 'Bu islem icin yetkiniz yok'], 403);
+            return response()->json(['message' => 'Bu işlem için yetkiniz yok'], 403);
         }
 
         return $next($request);

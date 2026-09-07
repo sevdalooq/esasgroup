@@ -22,8 +22,6 @@ const logout = async () => {
   finally {
     // Store ve cookie'leri temizle
     authStore.logout()
-    useCookie('userData').value = null
-    useCookie('accessToken').value = null
     router.push('/login')
   }
 }

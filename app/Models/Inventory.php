@@ -10,11 +10,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Inventory extends Model
 {
+    use \App\Models\Concerns\HasQrCode;
+
+    public const QR_PREFIX = 'INV';
+
     use HasFactory, SoftDeletes;
 
     protected $table = 'inventory';
 
     protected $fillable = [
+        'qr_code',
+        'nfc_uid',
         'name',
         'type',
         'unit',
@@ -26,6 +32,8 @@ class Inventory extends Model
         'current_holder_id',
         'notes',
     ];
+
+    protected $appends = ['qr_payload'];
 
     protected $casts = [
         'daily_rate' => 'decimal:2',

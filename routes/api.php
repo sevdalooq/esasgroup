@@ -41,7 +41,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index']);
 
     // Customers (Müşteriler)
-    Route::get('/customers/all', [CustomerController::class, 'all']);
+    Route::middleware('permission:customers.view')->get('/customers/all', [CustomerController::class, 'all']);
     Route::middleware('permission:customers.view')->get('/customers', [CustomerController::class, 'index']);
     Route::middleware('permission:customers.view')->get('/customers/{customer}', [CustomerController::class, 'show']);
     Route::middleware('permission:customers.view')->get('/customers/{customer}/details', [CustomerController::class, 'details']);
@@ -50,7 +50,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:customers.delete')->delete('/customers/{customer}', [CustomerController::class, 'destroy']);
 
     // Groups (Aracı Firmalar)
-    Route::get('/groups/all', [GroupController::class, 'all']);
+    Route::middleware('permission:groups.view')->get('/groups/all', [GroupController::class, 'all']);
     Route::middleware('permission:groups.view')->get('/groups', [GroupController::class, 'index']);
     Route::middleware('permission:groups.view')->get('/groups/{group}', [GroupController::class, 'show']);
     Route::middleware('permission:groups.create')->post('/groups', [GroupController::class, 'store']);
@@ -62,7 +62,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:personnel.create|personnel.edit')->post('/personnel-groups', [PersonnelGroupController::class, 'store']);
 
     // Personnel (Personel Havuzu)
-    Route::get('/personnel/all', [PersonnelController::class, 'all']);
+    Route::middleware('permission:personnel.view')->get('/personnel/all', [PersonnelController::class, 'all']);
     Route::middleware('permission:personnel.view')->get('/personnel', [PersonnelController::class, 'index']);
     Route::middleware('permission:personnel.view')->get('/personnel/{personnel}', [PersonnelController::class, 'show']);
     Route::middleware('permission:personnel.create')->post('/personnel', [PersonnelController::class, 'store']);
@@ -70,7 +70,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:personnel.delete')->delete('/personnel/{personnel}', [PersonnelController::class, 'destroy']);
 
     // Inventory (Envanter)
-    Route::get('/inventory/all', [InventoryController::class, 'all']);
+    Route::middleware('permission:inventory.view')->get('/inventory/all', [InventoryController::class, 'all']);
     Route::middleware('permission:inventory.view')->get('/inventory', [InventoryController::class, 'index']);
     Route::middleware('permission:inventory.view')->get('/inventory/{inventory}', [InventoryController::class, 'show']);
     Route::middleware('permission:inventory.create')->post('/inventory', [InventoryController::class, 'store']);
@@ -113,8 +113,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:projects.end_day')->get('/project-days/{projectDay}/end-data', [DayOperationsController::class, 'getEndDayData']);
     Route::middleware('permission:projects.end_day')->post('/project-days/{projectDay}/check-out/{assignment}', [DayOperationsController::class, 'checkOutPersonnel']);
     Route::middleware('permission:projects.end_day')->post('/project-days/{projectDay}/end', [DayOperationsController::class, 'endDay']);
-    Route::get('/zones/suggestions', [DayOperationsController::class, 'getZoneSuggestions']);
-    Route::post('/upload/photo', [DayOperationsController::class, 'uploadPhoto']);
+    Route::middleware('permission:projects.manage_days')->get('/zones/suggestions', [DayOperationsController::class, 'getZoneSuggestions']);
+    Route::middleware('permission:projects.manage_days')->post('/upload/photo', [DayOperationsController::class, 'uploadPhoto']);
     Route::middleware('permission:inventory.edit')->post('/inventory/{inventory}/damage', [DayOperationsController::class, 'reportDamage']);
 
     // Management - Users (Kullanıcı Yönetimi)
@@ -137,7 +137,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:roles.delete')->delete('/roles/{role}', [RoleController::class, 'destroy']);
 
     // Accounting - Kasalar
-    Route::get('/accounts/all', [AccountController::class, 'index']);
+    Route::middleware('permission:accounting.view')->get('/accounts/all', [AccountController::class, 'index']);
     Route::middleware('permission:accounting.view')->get('/accounts', [AccountController::class, 'index']);
     Route::middleware('permission:accounting.view')->get('/accounts/{account}', [AccountController::class, 'show']);
     Route::middleware('permission:accounting.view')->get('/accounts/{account}/transactions', [AccountController::class, 'transactions']);
@@ -178,7 +178,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:settings.edit')->delete('/settings/logo', [SettingController::class, 'deleteLogo']);
 
     // Expense Categories (Gider Kategorileri)
-    Route::get('/expense-categories/all', [ExpenseCategoryController::class, 'all']);
+    Route::middleware('permission:projects.manage_days')->get('/expense-categories/all', [ExpenseCategoryController::class, 'all']);
     Route::middleware('permission:settings.view')->get('/expense-categories', [ExpenseCategoryController::class, 'index']);
     Route::middleware('permission:settings.view')->get('/expense-categories/{category}', [ExpenseCategoryController::class, 'show']);
     Route::middleware('permission:settings.edit')->post('/expense-categories', [ExpenseCategoryController::class, 'store']);
@@ -189,4 +189,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // Proposals (Teklif Formu)
     Route::middleware('permission:projects.view')->get('/projects/{project}/proposal', [ProposalController::class, 'generate']);
     Route::middleware('permission:projects.view')->get('/projects/{project}/proposal/preview', [ProposalController::class, 'preview']);
+
+    // [FIELD ROUTES] Saha / QR işlemleri (FieldController)
+
+    // [CANDIDATE ROUTES] Aday havuzu yönetimi (CandidateController)
 });
+
+// [PUBLIC CANDIDATE ROUTES] Dışarıdan başvuru (auth gerektirmez, throttle ile)
+

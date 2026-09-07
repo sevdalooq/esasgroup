@@ -47,7 +47,8 @@ const fetchDashboard = async () => {
 const getStatusColor = (status: string) => {
   const colors: Record<string, string> = {
     draft: 'secondary',
-    confirmed: 'info',
+    pending: 'warning',
+    approved: 'info',
     in_progress: 'warning',
     completed: 'success',
     cancelled: 'error',
@@ -59,7 +60,8 @@ const getStatusColor = (status: string) => {
 const getStatusText = (status: string) => {
   const texts: Record<string, string> = {
     draft: 'Taslak',
-    confirmed: 'Onaylandi',
+    pending: 'Onay Bekliyor',
+    approved: 'Onaylandı',
     in_progress: 'Devam Ediyor',
     completed: 'Tamamlandi',
     cancelled: 'Iptal',

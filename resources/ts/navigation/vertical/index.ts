@@ -5,7 +5,7 @@ export default [
     icon: { icon: 'tabler-smart-home' },
   },
   {
-    heading: 'Proje Yonetimi',
+    heading: 'Proje Yönetimi',
     permission: 'projects.view',
   },
   {
@@ -14,18 +14,19 @@ export default [
     icon: { icon: 'tabler-calendar-event' },
     permission: 'projects.view',
   },
+  // [FIELD NAV]
   {
     heading: 'Master Data',
     permissions: ['customers.view', 'groups.view', 'personnel.view', 'inventory.view'],
   },
   {
-    title: 'Musteriler',
+    title: 'Müşteriler',
     to: { name: 'customers' },
     icon: { icon: 'tabler-building' },
     permission: 'customers.view',
   },
   {
-    title: 'Araci Firmalar',
+    title: 'Ekipler / Aracı Firmalar',
     to: { name: 'groups' },
     icon: { icon: 'tabler-users-group' },
     permission: 'groups.view',
@@ -42,6 +43,7 @@ export default [
     icon: { icon: 'tabler-box' },
     permission: 'inventory.view',
   },
+  // [CANDIDATE NAV]
   {
     heading: 'Muhasebe',
     permission: 'accounting.view',
@@ -65,17 +67,17 @@ export default [
     permission: 'accounting.view',
   },
   {
-    title: 'Masraf Onaylari',
+    title: 'Masraf Onayları',
     to: { name: 'accounting-expenses' },
     icon: { icon: 'tabler-receipt' },
     permission: 'accounting.approve_expenses',
   },
   {
-    heading: 'Yonetim',
+    heading: 'Yönetim',
     permissions: ['users.view', 'roles.view', 'settings.view'],
   },
   {
-    title: 'Kullanicilar',
+    title: 'Kullanıcılar',
     to: { name: 'management-users' },
     icon: { icon: 'tabler-user-cog' },
     permission: 'users.view',

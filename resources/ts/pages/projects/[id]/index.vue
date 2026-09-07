@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import DayStartWizard from './components/DayStartWizard.vue'
-import DayEndWizard from './components/DayEndWizard.vue'
+import DayStartWizard from '@/views/projects/DayStartWizard.vue'
+import DayEndWizard from '@/views/projects/DayEndWizard.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSwal } from '@/composables/useSwal'
 
