@@ -28,6 +28,9 @@ class Project extends Model
         'finalized_at',
         'finalized_by',
         'notes',
+        'venue_address',
+        'venue_lat',
+        'venue_lng',
     ];
 
     protected $casts = [

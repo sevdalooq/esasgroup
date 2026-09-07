@@ -19,6 +19,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Saha (mobil/QR) izinleri
             ['name' => 'field.access', 'display_name' => 'Saha Ekranına Eriş', 'group' => 'Saha'],
             ['name' => 'field.scan', 'display_name' => 'QR/NFC ile İşlem Yap', 'group' => 'Saha'],
+            ['name' => 'self.access', 'display_name' => 'Personel Modu (kendi görevleri)', 'group' => 'Saha'],
 
             // Aday havuzu izinleri
             ['name' => 'candidates.view', 'display_name' => 'Başvuruları Gör', 'group' => 'Aday Havuzu'],
@@ -131,6 +132,16 @@ class RolesAndPermissionsSeeder extends Seeder
                 'is_system' => false,
             ]
         );
+
+        $personnelRole = Role::firstOrCreate(
+            ['name' => 'personnel'],
+            [
+                'display_name' => 'Personel',
+                'description' => 'Sahada görevli personel: sadece kendi görevleri, giriş, mola ve konum',
+                'is_system' => true,
+            ]
+        );
+        $personnelRole->syncPermissions(Permission::whereIn('name', ['self.access'])->pluck('id')->toArray());
 
         // Admin tüm izinlere sahip
         $adminRole->syncPermissions(Permission::pluck('id')->toArray());

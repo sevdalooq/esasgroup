@@ -13,6 +13,7 @@ docker compose up -d          # mysql:3306 redis:6379 mailpit:8025 phpmyadmin:80
 php artisan serve             # http://localhost:8000 (API + SPA shell)
 npm run dev                   # Vite 5173 (HMR)
 php artisan migrate:fresh --seed
+php artisan reverb:start --port=8081   # websocket; olaylar app/Events (DayUpdated, PersonnelLocationUpdated), kanallar routes/channels.php
 ```
 Giriş: `admin@esasgroup.com.tr` / `EsasAdmin2026!` (seed). Tip kontrolü: `npx vue-tsc --noEmit`.
 
@@ -22,4 +23,5 @@ Giriş: `admin@esasgroup.com.tr` / `EsasAdmin2026!` (seed). Tip kontrolü: `npx 
 - Proje durumları: `draft, pending, approved, active, completed, cancelled` (`confirmed` YOK). Envanter durumu: `current_status`.
 - Para hesapları `AccountingService` üzerinden ve `DB::transaction` içinde yapılır.
 - Teklif DOCX şablonu: `resources/templates/teklif-sablonu.docx`.
+- Gün içi kayıt değişiklikleri `LiveBroadcastObserver` ile otomatik yayınlanır; yeni saha işlemleri için ayrıca event fırlatmaya gerek yok. Personel durumu `project_day_personnel.presence` (assigned/checked_in/on_break/checked_out/absent).
 - Sihirbaz/bileşenler `pages/` altına konmaz (route'a dönüşür); `resources/ts/views/` veya `components/` kullanın.

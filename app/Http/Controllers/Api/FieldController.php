@@ -360,6 +360,62 @@ class FieldController extends Controller
     /**
      * QR etiket sayfası için tüm envanter (silinmemiş) – qr_payload dahil.
      */
+    /** Mola başlat / bitir / gelmedi (supervisor tarafından) */
+    public function breakStart(Request $request, ProjectDay $projectDay): JsonResponse
+    {
+        $this->authorizeDay($request, $projectDay);
+        $this->ensureDayOpen($projectDay);
+        $assignment = $this->resolveAssignment($request, $projectDay);
+        $assignment = $this->dayOps->startBreak($assignment, $request->input('reason'));
+        $assignment->load('personnel:' . self::PERSONNEL_SELECT);
+
+        return response()->json(['message' => "{$assignment->personnel->full_name} molaya çıktı.", 'assignment' => $assignment, 'summary' => $this->dayOps->calculateDaySummary($projectDay->fresh())]);
+    }
+
+    public function breakEnd(Request $request, ProjectDay $projectDay): JsonResponse
+    {
+        $this->authorizeDay($request, $projectDay);
+        $this->ensureDayOpen($projectDay);
+        $assignment = $this->resolveAssignment($request, $projectDay);
+        $assignment = $this->dayOps->endBreak($assignment);
+        $assignment->load('personnel:' . self::PERSONNEL_SELECT);
+
+        return response()->json(['message' => "{$assignment->personnel->full_name} moladan döndü.", 'assignment' => $assignment, 'summary' => $this->dayOps->calculateDaySummary($projectDay->fresh())]);
+    }
+
+    public function markAbsent(Request $request, ProjectDay $projectDay): JsonResponse
+    {
+        $this->authorizeDay($request, $projectDay);
+        $this->ensureDayOpen($projectDay);
+        $assignment = $this->resolveAssignment($request, $projectDay);
+        $absent = $request->boolean('absent', true);
+        $assignment = $this->dayOps->markAbsent($assignment, $absent);
+        $assignment->load('personnel:' . self::PERSONNEL_SELECT);
+
+        return response()->json(['message' => $absent ? "{$assignment->personnel->full_name} gelmedi olarak işaretlendi." : 'İşaret kaldırıldı.', 'assignment' => $assignment, 'summary' => $this->dayOps->calculateDaySummary($projectDay->fresh())]);
+    }
+
+    /** assignment_id | personnel_id | personnel_payload ile günün atamasını bul */
+    private function resolveAssignment(Request $request, ProjectDay $projectDay): ProjectDayPersonnel
+    {
+        $validated = $request->validate([
+            'assignment_id' => 'nullable|integer|exists:project_day_personnel,id',
+            'personnel_id' => 'nullable|integer|exists:personnel,id',
+            'personnel_payload' => 'nullable|string|max:255',
+        ]);
+        if (!empty($validated['assignment_id'])) {
+            $assignment = $projectDay->personnelAssignments()->find($validated['assignment_id']);
+        } else {
+            $personnel = $this->resolvePersonnel($validated);
+            $assignment = $projectDay->personnelAssignments()->where('personnel_id', $personnel->id)->first();
+        }
+        if (!$assignment) {
+            $this->fail('Bu personel bu güne atanmamış.', 'personnel_id');
+        }
+
+        return $assignment;
+    }
+
     /**
      * Sahada masraf girişi (fiş fotoğrafı ile). Onay muhasebede yapılır.
      */

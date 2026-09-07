@@ -21,8 +21,9 @@ php artisan storage:link
 Çalıştırma (iki terminal):
 
 ```bash
-php artisan serve      # http://localhost:8000
-npm run dev            # Vite HMR (5173)
+php artisan serve                 # http://localhost:8000
+npm run dev                       # Vite HMR (5173)
+php artisan reverb:start --port=8081   # Websocket (canlı izleme, anlık güncellemeler)
 ```
 
 ## Demo hesapları
@@ -32,6 +33,7 @@ npm run dev            # Vite HMR (5173)
 | Yönetici | admin@esasgroup.com.tr | EsasAdmin2026! |
 | Müdür | mudur@esasgroup.com.tr | EsasMudur2026! |
 | Saha Sorumlusu | saha@esasgroup.com.tr | EsasSaha2026! |
+| Personel (mobil personel modu) | personel@esasgroup.com.tr | EsasPersonel2026! |
 
 Demo verisini sıfırlamak için: `php artisan db:seed --class=Database\\Seeders\\Demo\\DemoDataResetSeeder && php artisan db:seed --class=DemoDataSeeder`
 
@@ -40,6 +42,7 @@ Demo verisini sıfırlamak için: `php artisan db:seed --class=Database\\Seeders
 - Panel: http://localhost:8000
 - Personel başvuru formu (herkese açık): http://localhost:8000/basvuru
 - Saha ekranı (mobil uyumlu, QR): http://localhost:8000/saha
+- Canlı izleme (durum + harita): http://localhost:8000/canli
 - E-posta kutusu (Mailpit): http://localhost:8025
 
 ## Yapı

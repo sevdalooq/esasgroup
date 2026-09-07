@@ -119,6 +119,7 @@ class DayOperationService
             'check_in_time' => now(),
             'zone' => $zone ?: $assignment->zone,
             'is_checked' => $isChecked,
+            'presence' => 'checked_in',
         ];
         if ($photoPath) {
             $data['check_in_photo'] = $photoPath;
@@ -162,7 +163,12 @@ class DayOperationService
                 $paymentAmount = $totalEarnings;
             }
 
+            if ($assignment->presence === 'on_break') {
+                $this->endBreak($assignment);
+            }
+
             $data = [
+                'presence' => 'checked_out',
                 'check_out_time' => !empty($options['check_out_time']) ? $options['check_out_time'] : now(),
                 'overtime_hours' => $overtimeHours,
                 'overtime_rate' => $overtimeRate,
@@ -191,6 +197,62 @@ class DayOperationService
 
             return $assignment->fresh();
         });
+    }
+
+    /**
+     * Mola başlat.
+     */
+    public function startBreak(ProjectDayPersonnel $assignment, ?string $reason = null): ProjectDayPersonnel
+    {
+        if ($assignment->presence !== 'checked_in') {
+            throw ValidationException::withMessages(['assignment' => 'Sadece sahada olan personel molaya çıkabilir.']);
+        }
+
+        return DB::transaction(function () use ($assignment, $reason) {
+            $assignment->breaks()->create(['started_at' => now(), 'reason' => $reason]);
+            $assignment->update(['presence' => 'on_break', 'break_started_at' => now()]);
+
+            return $assignment->fresh();
+        });
+    }
+
+    /**
+     * Moladan dön.
+     */
+    public function endBreak(ProjectDayPersonnel $assignment): ProjectDayPersonnel
+    {
+        if ($assignment->presence !== 'on_break') {
+            throw ValidationException::withMessages(['assignment' => 'Bu personel molada değil.']);
+        }
+
+        return DB::transaction(function () use ($assignment) {
+            $break = $assignment->breaks()->whereNull('ended_at')->latest('started_at')->first();
+            $minutes = 0;
+            if ($break) {
+                $break->update(['ended_at' => now()]);
+                $minutes = (int) $break->started_at->diffInMinutes(now());
+            }
+            $assignment->update([
+                'presence' => 'checked_in',
+                'break_started_at' => null,
+                'break_minutes' => $assignment->break_minutes + $minutes,
+            ]);
+
+            return $assignment->fresh();
+        });
+    }
+
+    /**
+     * Gelmedi olarak işaretle (veya geri al).
+     */
+    public function markAbsent(ProjectDayPersonnel $assignment, bool $absent = true): ProjectDayPersonnel
+    {
+        if ($assignment->check_in_time) {
+            throw ValidationException::withMessages(['assignment' => 'Giriş yapmış personel gelmedi olarak işaretlenemez.']);
+        }
+        $assignment->update(['presence' => $absent ? 'absent' : 'assigned']);
+
+        return $assignment->fresh();
     }
 
     /**

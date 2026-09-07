@@ -19,6 +19,9 @@ class ProjectDayPersonnel extends Model
         'overtime_hours',
         'overtime_rate',
         'total_earnings',
+        'presence',
+        'break_started_at',
+        'break_minutes',
         'zone',
         'check_in_time',
         'check_in_photo',
@@ -32,6 +35,7 @@ class ProjectDayPersonnel extends Model
     ];
 
     protected $casts = [
+        'break_started_at' => 'datetime',
         'daily_wage' => 'decimal:2',
         'overtime_hours' => 'decimal:2',
         'overtime_rate' => 'decimal:2',
@@ -109,5 +113,10 @@ class ProjectDayPersonnel extends Model
     public function assignedInventory()
     {
         return $this->hasMany(ProjectDayInventory::class, 'assigned_to_personnel_id');
+    }
+
+    public function breaks(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PersonnelBreak::class, 'project_day_personnel_id');
     }
 }

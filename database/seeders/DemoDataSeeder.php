@@ -99,6 +99,7 @@ class DemoDataSeeder extends Seeder
 
             $this->createPersonnelDocuments();
             $this->backfill();
+        $this->seedLiveDemo();
         });
 
         $this->command?->info(sprintf(
@@ -1309,5 +1310,58 @@ class DemoDataSeeder extends Seeder
         $d = $districts[$city] ?? ['Merkez'];
 
         return sprintf('%s Mah. %d. Sok. No:%d D:%d, %s / %s', $mah[array_rand($mah)], mt_rand(100, 2999), mt_rand(1, 60), mt_rand(1, 20), $d[array_rand($d)], $city);
+    }
+
+    /**
+     * Canlı izleme demosu: personel hesabı, mekân koordinatları, örnek konumlar.
+     */
+    private function seedLiveDemo(): void
+    {
+        $personnelRole = \App\Models\Role::where('name', 'personnel')->first();
+
+        // TV100 (bugünkü aktif gün) – Kağıthane stüdyo civarı
+        $tv100 = \App\Models\Project::where('name', 'like', 'TV100%')->first();
+        if ($tv100) {
+            $tv100->update(['venue_address' => 'TV100 Stüdyoları, Kağıthane / İstanbul', 'venue_lat' => 41.0868, 'venue_lng' => 28.9737]);
+            $day = $tv100->days()->orderBy('date')->first();
+            if ($day) {
+                $day->update(['venue_lat' => 41.0868, 'venue_lng' => 28.9737]);
+                $assignments = $day->personnelAssignments()->with('personnel')->get();
+                foreach ($assignments->take(6) as $i => $assignment) {
+                    $p = $assignment->personnel;
+                    $lat = 41.0868 + (mt_rand(-40, 40) / 100000);
+                    $lng = 28.9737 + (mt_rand(-60, 60) / 100000);
+                    \App\Models\PersonnelLocation::create([
+                        'personnel_id' => $p->id, 'project_day_id' => $day->id,
+                        'lat' => $lat, 'lng' => $lng, 'accuracy' => mt_rand(5, 25), 'recorded_at' => now()->subMinutes(mt_rand(1, 12)),
+                    ]);
+                    $p->forceFill(['last_lat' => $lat, 'last_lng' => $lng, 'last_location_at' => now()->subMinutes(mt_rand(1, 12))])->save();
+                }
+
+                // İlk personel için mobil "personel modu" hesabı
+                $first = $assignments->first()?->personnel;
+                if ($first && !$first->user_id) {
+                    $user = \App\Models\User::firstOrCreate(
+                        ['email' => 'personel@esasgroup.com.tr'],
+                        ['name' => $first->full_name, 'password' => bcrypt('EsasPersonel2026!'), 'is_active' => true]
+                    );
+                    if ($personnelRole && !$user->roles()->where('roles.id', $personnelRole->id)->exists()) {
+                        $user->assignRole($personnelRole);
+                    }
+                    $first->forceFill(['user_id' => $user->id, 'email' => 'personel@esasgroup.com.tr'])->save();
+                }
+            }
+        }
+
+        $venues = [
+            'Zorlu PSM' => ['Zorlu Center, Beşiktaş / İstanbul', 41.0667, 29.0170],
+            'Coca-Cola' => ['Coca-Cola İçecek Genel Merkezi, Ümraniye / İstanbul', 41.0206, 29.1230],
+            'Şişli' => ['Şişli Belediyesi Meydanı, Şişli / İstanbul', 41.0602, 28.9877],
+            'Siemens' => ['Siemens Gebze Tesisleri, Kocaeli', 40.8020, 29.4330],
+            'Rumeli' => ['Özel Rumeli Hastanesi, Küçükçekmece / İstanbul', 41.0176, 28.7716],
+        ];
+        foreach ($venues as $needle => [$address, $lat, $lng]) {
+            \App\Models\Project::where('name', 'like', "%{$needle}%")->update(['venue_address' => $address, 'venue_lat' => $lat, 'venue_lng' => $lng]);
+        }
     }
 }

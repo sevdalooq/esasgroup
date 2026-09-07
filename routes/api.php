@@ -22,6 +22,8 @@ use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\ProposalController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\LiveController;
+use App\Http\Controllers\Api\SelfServiceController;
 use App\Http\Controllers\Api\CandidateController;
 use App\Http\Controllers\Api\PublicApplicationController;
 use Illuminate\Support\Facades\Route;
@@ -206,6 +208,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/end', [FieldController::class, 'endDay']);
     Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/expenses', [FieldController::class, 'storeExpense']);
     Route::middleware('permission:field.scan')->delete('/field/days/{projectDay}/expenses/{expense}', [FieldController::class, 'destroyExpense']);
+    Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/break/start', [FieldController::class, 'breakStart']);
+    Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/break/end', [FieldController::class, 'breakEnd']);
+    Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/absent', [FieldController::class, 'markAbsent']);
+
+    // Canlı izleme
+    Route::middleware('permission:field.access')->get('/live/overview', [LiveController::class, 'overview']);
+    Route::post('/field/location', [LiveController::class, 'storeLocation']);
+
+    // Personel modu (kendi hesabıyla giriş yapan görevli)
+    Route::get('/me/assignments', [SelfServiceController::class, 'assignments']);
+    Route::post('/me/check-in', [SelfServiceController::class, 'checkIn']);
+    Route::post('/me/break/start', [SelfServiceController::class, 'breakStart']);
+    Route::post('/me/break/end', [SelfServiceController::class, 'breakEnd']);
     Route::middleware('permission:inventory.view')->get('/field/inventory/labels', [FieldController::class, 'inventoryLabels']);
     Route::middleware('permission:projects.view')->get('/field/projects/{project}/zones', [FieldController::class, 'zones']);
     Route::middleware('permission:projects.manage_days')->post('/field/projects/{project}/zones', [FieldController::class, 'storeZone']);

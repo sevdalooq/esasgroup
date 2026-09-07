@@ -19,6 +19,8 @@ class ProjectDay extends Model
         'start_photo',
         'end_photo',
         'notes',
+        'venue_lat',
+        'venue_lng',
     ];
 
     protected $casts = [

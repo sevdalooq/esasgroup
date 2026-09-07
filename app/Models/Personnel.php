@@ -38,6 +38,9 @@ class Personnel extends Model
         'phone',
         'email',
         'fcm_token',
+        'last_lat',
+        'last_lng',
+        'last_location_at',
         'address',
         'photo',
         'photo_1',
@@ -113,6 +116,9 @@ class Personnel extends Model
         'default_wage' => 'decimal:2',
         'is_active' => 'boolean',
         'applied_at' => 'datetime',
+        'last_location_at' => 'datetime',
+        'last_lat' => 'float',
+        'last_lng' => 'float',
         'height' => 'integer',
         'weight' => 'integer',
         'has_driver_license' => 'boolean',
@@ -292,5 +298,10 @@ class Personnel extends Model
     public function routeNotificationForMail($notification = null): ?string
     {
         return $this->email ?: $this->user?->email;
+    }
+
+    public function locations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PersonnelLocation::class);
     }
 }
