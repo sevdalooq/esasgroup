@@ -319,7 +319,7 @@ class FieldController extends Controller
 
         $request->validate([
             'photo' => $this->photoRule($request, 'photo'),
-            'start_photo' => 'nullable|string',
+            'start_photo' => $this->photoRule($request, 'start_photo'),
         ]);
 
         $photoPath = $this->dayOps->storeRequestPhoto($request, 'photo', 'day-photos/start')
@@ -342,7 +342,7 @@ class FieldController extends Controller
 
         $request->validate([
             'photo' => $this->photoRule($request, 'photo'),
-            'end_photo' => 'nullable|string',
+            'end_photo' => $this->photoRule($request, 'end_photo'),
         ]);
 
         $photoPath = $this->dayOps->storeRequestPhoto($request, 'photo', 'day-photos/end')
