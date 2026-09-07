@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import type { Day, PersonnelAssignment } from '@/views/field/field'
-import { formatTime, heldInventory, isCheckedIn } from '@/views/field/field'
+import type { Day, PersonnelAssignment, PresenceAction } from '@/views/field/field'
+import { formatTime, heldInventory, isAbsent, isCheckedIn, presenceOf } from '@/views/field/field'
 import PersonnelAvatar from '@/views/field/PersonnelAvatar.vue'
+import PresenceActions from '@/views/field/PresenceActions.vue'
+import PresenceChip from '@/views/field/PresenceChip.vue'
 
 /**
  * Gün başlangıcı – 1. adım: atanmış personel listesi, arama, ilerleme ve "Giriş" düğmeleri.
@@ -9,20 +11,26 @@ import PersonnelAvatar from '@/views/field/PersonnelAvatar.vue'
 const props = defineProps<{
   day: Day
   undeliveredCount: number
+  busyId?: number | null
 }>()
 
 const emit = defineEmits<{
   'check-in': [assignment: PersonnelAssignment]
+  'presence': [assignment: PersonnelAssignment, action: PresenceAction]
 }>()
 
 const search = ref('')
+const now = ref(new Date())
+const ticker = setInterval(() => { now.value = new Date() }, 60_000)
+onBeforeUnmount(() => clearInterval(ticker))
 
 const assignments = computed(() => props.day.personnel_assignments)
 const checkedInCount = computed(() => assignments.value.filter(isCheckedIn).length)
+const absentCount = computed(() => assignments.value.filter(isAbsent).length)
 
 const filtered = computed(() => {
   const q = (search.value || '').trim().toLocaleLowerCase('tr-TR')
-  const rank = (a: PersonnelAssignment) => (isCheckedIn(a) ? 1 : 0)
+  const rank = (a: PersonnelAssignment) => (isCheckedIn(a) ? 1 : isAbsent(a) ? 2 : 0)
 
   return [...assignments.value]
     .filter(a => !q || `${a.personnel.full_name} ${a.zone || ''}`.toLocaleLowerCase('tr-TR').includes(q))
@@ -39,15 +47,26 @@ const heldCount = (a: PersonnelAssignment) => heldInventory(props.day, a).length
         <span class="text-body-1">
           <strong>{{ checkedInCount }}/{{ assignments.length }}</strong> giriş yaptı
         </span>
-        <VChip
-          v-if="undeliveredCount"
-          size="small"
-          variant="tonal"
-          color="warning"
-          prepend-icon="tabler-box"
-        >
-          {{ undeliveredCount }} zimmet bekliyor
-        </VChip>
+        <div class="d-flex gap-1">
+          <VChip
+            v-if="absentCount"
+            size="small"
+            variant="tonal"
+            color="error"
+            prepend-icon="tabler-user-off"
+          >
+            {{ absentCount }} gelmedi
+          </VChip>
+          <VChip
+            v-if="undeliveredCount"
+            size="small"
+            variant="tonal"
+            color="warning"
+            prepend-icon="tabler-box"
+          >
+            {{ undeliveredCount }} zimmet bekliyor
+          </VChip>
+        </div>
       </div>
       <VProgressLinear
         :model-value="assignments.length ? (checkedInCount / assignments.length) * 100 : 0"
@@ -74,7 +93,7 @@ const heldCount = (a: PersonnelAssignment) => heldInventory(props.day, a).length
         <template #prepend>
           <PersonnelAvatar
             :personnel="a.personnel"
-            :color="isCheckedIn(a) ? 'success' : 'primary'"
+            :color="isAbsent(a) ? 'error' : isCheckedIn(a) ? 'success' : 'primary'"
           />
         </template>
         <VListItemTitle class="font-weight-medium">
@@ -94,25 +113,35 @@ const heldCount = (a: PersonnelAssignment) => heldInventory(props.day, a).length
             icon="tabler-map-pin"
             size="14"
           /> {{ a.zone }} · </span>
-          <span v-if="isCheckedIn(a)">Giriş {{ formatTime(a.check_in_time) }}<span v-if="heldCount(a)"> · {{ heldCount(a) }} zimmet</span></span>
-          <span v-else>Bekleniyor</span>
+          <span v-if="isCheckedIn(a)">Giriş {{ formatTime(a.check_in_time) }}<span v-if="heldCount(a)"> · {{ heldCount(a) }} zimmet</span> </span>
+          <PresenceChip
+            :assignment="a"
+            :now="now"
+          />
         </VListItemSubtitle>
         <template #append>
-          <VBtn
-            v-if="!isCheckedIn(a)"
-            color="primary"
-            variant="tonal"
-            size="large"
-            @click="emit('check-in', a)"
-          >
-            Giriş
-          </VBtn>
-          <VIcon
-            v-else
-            icon="tabler-circle-check-filled"
-            color="success"
-            size="28"
-          />
+          <div class="d-flex align-center gap-1">
+            <VBtn
+              v-if="!isCheckedIn(a)"
+              color="primary"
+              :variant="isAbsent(a) ? 'outlined' : 'tonal'"
+              size="large"
+              @click="emit('check-in', a)"
+            >
+              Giriş
+            </VBtn>
+            <VIcon
+              v-else-if="presenceOf(a) === 'checked_in'"
+              icon="tabler-circle-check-filled"
+              color="success"
+              size="28"
+            />
+            <PresenceActions
+              :assignment="a"
+              :busy="busyId === a.id"
+              @action="(x: PersonnelAssignment, action: PresenceAction) => emit('presence', x, action)"
+            />
+          </div>
         </template>
       </VListItem>
       <VListItem v-if="!filtered.length">

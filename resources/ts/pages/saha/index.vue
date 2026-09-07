@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLiveFeed } from '@/composables/useEcho'
 import { useSwal } from '@/composables/useSwal'
 
 interface FieldDay {
@@ -22,8 +23,9 @@ const loading = ref(false)
 const days = ref<FieldDay[]>([])
 const today = ref('')
 
-const load = async () => {
-  loading.value = true
+const load = async (silent = false) => {
+  if (!silent)
+    loading.value = true
   try {
     const response = await $api<{ today: string; days: FieldDay[] }>('/field/today')
 
@@ -63,7 +65,15 @@ const openDay = (day: FieldDay) => {
   router.push({ name: 'saha-day-id', params: { dayId: String(day.id) } })
 }
 
-onMounted(load)
+onMounted(() => load())
+
+// Canlı: herhangi bir günde giriş/çıkış/durum değişince listeyi sessizce yenile
+let reloadTimer: ReturnType<typeof setTimeout> | null = null
+useLiveFeed(() => {
+  if (reloadTimer)
+    clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => load(true), 400)
+})
 </script>
 
 <template>

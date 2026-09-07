@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import type { DayUpdatedEvent } from '@/composables/useEcho'
+import { describeDayEvent, useDayLive } from '@/composables/useEcho'
 import { useSwal } from '@/composables/useSwal'
+import { useAuthStore } from '@/stores/auth'
 import CheckInList from '@/views/field/CheckInList.vue'
 import CheckInSheet from '@/views/field/CheckInSheet.vue'
 import CheckOutList from '@/views/field/CheckOutList.vue'
@@ -8,8 +11,8 @@ import DayPhotoStep from '@/views/field/DayPhotoStep.vue'
 import DeliverSheet from '@/views/field/DeliverSheet.vue'
 import EndSummary from '@/views/field/EndSummary.vue'
 import ExpenseSheet from '@/views/field/ExpenseSheet.vue'
-import type { AssignedInventory, Day, DayPayload, Expense, InventoryAssignment, InventoryItem, Personnel, PersonnelAssignment, Summary, Zone } from '@/views/field/field'
-import { errorMessage, formatCurrency, formatDate, formatTime, heldInventory, isCheckedIn, isCheckedOut, isDelivered, isReturned, resolveScan } from '@/views/field/field'
+import type { AssignedInventory, Day, DayPayload, Expense, InventoryAssignment, InventoryItem, Personnel, PersonnelAssignment, PresenceAction, Summary, Zone } from '@/views/field/field'
+import { errorMessage, formatCurrency, formatDate, formatTime, heldInventory, isCheckedIn, isCheckedOut, isDelivered, isReturned, presenceRequest, resolveScan } from '@/views/field/field'
 import FlowStepper from '@/views/field/FlowStepper.vue'
 import HubPanel from '@/views/field/HubPanel.vue'
 import type { PickItem } from '@/views/field/PickSheet.vue'
@@ -33,6 +36,7 @@ type Step = 1 | 2 | 3
 const route = useRoute()
 const router = useRouter()
 const swal = useSwal()
+const auth = useAuthStore()
 
 const dayId = computed(() => Number((route.params as Record<string, string>).dayId))
 const endFlowKey = computed(() => `saha-endflow-${dayId.value}`)
@@ -63,6 +67,40 @@ const load = async (silent = false) => {
   }
   finally {
     loading.value = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Canlı: bu günde başka biri (mobil personel, diğer sorumlu, ofis) bir şey yaptığında sessizce yenile
+// ---------------------------------------------------------------------------
+let reloadTimer: ReturnType<typeof setTimeout> | null = null
+const onLiveEvent = (event: DayUpdatedEvent) => {
+  if (event.project_day_id !== dayId.value)
+    return
+  if (reloadTimer)
+    clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => load(true), 250)
+  if (event.actor_id !== auth.user?.id)
+    swal.toast('info', describeDayEvent(event))
+}
+useDayLive(dayId, onLiveEvent)
+
+// Sorumlu işlemleri: Gelmedi / Mola / Moladan döndü
+const presenceBusyId = ref<number | null>(null)
+const onPresence = async (assignment: PersonnelAssignment, action: PresenceAction) => {
+  presenceBusyId.value = assignment.id
+  try {
+    const response = await presenceRequest(dayId.value, assignment.id, action)
+    if (response.summary)
+      summary.value = response.summary
+    swal.toast('success', response.message)
+    await load(true)
+  }
+  catch (error) {
+    swal.toast('error', errorMessage(error, 'İşlem yapılamadı'))
+  }
+  finally {
+    presenceBusyId.value = null
   }
 }
 
@@ -545,7 +583,9 @@ onMounted(async () => {
           v-if="startStep === 1"
           :day="day"
           :undelivered-count="undelivered.length"
+          :busy-id="presenceBusyId"
           @check-in="(a: PersonnelAssignment) => openCheckIn(a.personnel, a)"
+          @presence="onPresence"
         />
         <StartSummary
           v-else-if="startStep === 2"
@@ -564,6 +604,8 @@ onMounted(async () => {
         v-else-if="phase === 'hub'"
         :day="day"
         :summary="summary"
+        :busy-id="presenceBusyId"
+        @presence="onPresence"
         @late="openPick('late')"
         @lastminute="openPick('lastminute')"
         @deliver="openPick('deliver')"
@@ -575,7 +617,9 @@ onMounted(async () => {
         <CheckOutList
           v-if="endStep === 1"
           :day="day"
+          :busy-id="presenceBusyId"
           @check-out="openCheckOut"
+          @presence="onPresence"
         />
         <EndSummary
           v-else-if="endStep === 2"

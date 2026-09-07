@@ -1,18 +1,26 @@
 <script setup lang="ts">
-import type { Day, PersonnelAssignment } from '@/views/field/field'
-import { formatCurrency, formatTime, heldInventory, isCheckedIn, isCheckedOut } from '@/views/field/field'
+import type { Day, PersonnelAssignment, PresenceAction } from '@/views/field/field'
+import { formatCurrency, formatTime, heldInventory, isCheckedIn, isCheckedOut, isOnBreak } from '@/views/field/field'
 import PersonnelAvatar from '@/views/field/PersonnelAvatar.vue'
+import PresenceActions from '@/views/field/PresenceActions.vue'
+import PresenceChip from '@/views/field/PresenceChip.vue'
 
 /**
  * Gün sonu – 1. adım: giriş yapmış personel listesi; çıkış bekleyenler üstte.
  */
 const props = defineProps<{
   day: Day
+  busyId?: number | null
 }>()
 
 const emit = defineEmits<{
   'check-out': [assignment: PersonnelAssignment]
+  'presence': [assignment: PersonnelAssignment, action: PresenceAction]
 }>()
+
+const now = ref(new Date())
+const ticker = setInterval(() => { now.value = new Date() }, 60_000)
+onBeforeUnmount(() => clearInterval(ticker))
 
 const byName = (a: PersonnelAssignment, b: PersonnelAssignment) => a.personnel.full_name.localeCompare(b.personnel.full_name, 'tr')
 
@@ -54,7 +62,7 @@ const heldCount = (a: PersonnelAssignment) => heldInventory(props.day, a).length
         <template #prepend>
           <PersonnelAvatar
             :personnel="a.personnel"
-            :color="isCheckedOut(a) ? 'secondary' : 'error'"
+            :color="isCheckedOut(a) ? 'secondary' : isOnBreak(a) ? 'warning' : 'error'"
           />
         </template>
         <VListItemTitle class="font-weight-medium">
@@ -66,24 +74,37 @@ const heldCount = (a: PersonnelAssignment) => heldInventory(props.day, a).length
           </template>
           <template v-else>
             Giriş {{ formatTime(a.check_in_time) }}<span v-if="a.zone"> · {{ a.zone }}</span><span v-if="heldCount(a)"> · {{ heldCount(a) }} zimmet</span>
+            <PresenceChip
+              :assignment="a"
+              :now="now"
+              class="ms-1"
+            />
           </template>
         </VListItemSubtitle>
         <template #append>
-          <VBtn
-            v-if="!isCheckedOut(a)"
-            color="error"
-            variant="tonal"
-            size="large"
-            @click="emit('check-out', a)"
-          >
-            Çıkış
-          </VBtn>
-          <VIcon
-            v-else
-            icon="tabler-circle-check-filled"
-            color="secondary"
-            size="28"
-          />
+          <div class="d-flex align-center gap-1">
+            <VBtn
+              v-if="!isCheckedOut(a)"
+              color="error"
+              variant="tonal"
+              size="large"
+              @click="emit('check-out', a)"
+            >
+              Çıkış
+            </VBtn>
+            <VIcon
+              v-else
+              icon="tabler-circle-check-filled"
+              color="secondary"
+              size="28"
+            />
+            <PresenceActions
+              v-if="!isCheckedOut(a)"
+              :assignment="a"
+              :busy="busyId === a.id"
+              @action="(x: PersonnelAssignment, action: PresenceAction) => emit('presence', x, action)"
+            />
+          </div>
         </template>
       </VListItem>
       <VListItem v-if="!checkedIn.length">

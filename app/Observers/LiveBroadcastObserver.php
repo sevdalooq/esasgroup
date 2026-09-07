@@ -89,6 +89,7 @@ class LiveBroadcastObserver
                 'on_break' => 'break_start',
                 'checked_out' => 'check_out',
                 'absent' => 'absent',
+                'assigned' => $a->getOriginal('presence') === 'absent' ? 'absent_cleared' : 'assignment',
                 default => 'assignment',
             };
         }

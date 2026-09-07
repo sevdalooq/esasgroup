@@ -46,6 +46,9 @@ export interface AssignedInventory {
 export type PaymentStatus = 'pending' | 'partial' | 'paid'
 export type PaymentMethod = 'cash' | 'bank' | 'mixed'
 
+/** project_day_personnel.presence */
+export type Presence = 'assigned' | 'checked_in' | 'on_break' | 'checked_out' | 'absent'
+
 export interface PersonnelAssignment {
   id: number
   personnel_id: number
@@ -54,6 +57,9 @@ export interface PersonnelAssignment {
   check_in_time: string | null
   check_out_time: string | null
   is_checked: boolean
+  presence?: Presence
+  break_started_at?: string | null
+  break_minutes?: number | null
   daily_wage: Decimal
   overtime_hours: Decimal
   overtime_rate: Decimal
@@ -251,6 +257,42 @@ export const heldInventory = (day: Day, assignment: PersonnelAssignment): Assign
   const source: AssignedInventory[] = fromDay.length ? fromDay : (assignment.assigned_inventory || [])
 
   return source.filter(i => i.delivered_at && !i.returned_at)
+}
+
+/** Sunucudaki presence yoksa zaman damgalarından türetilir. */
+export const presenceOf = (a: PersonnelAssignment): Presence => a.presence
+  || (a.check_out_time ? 'checked_out' : a.check_in_time ? 'checked_in' : 'assigned')
+
+export const presenceText = (p: Presence) => ({
+  assigned: 'Bekleniyor',
+  checked_in: 'Sahada',
+  on_break: 'Molada',
+  checked_out: 'Çıkış yaptı',
+  absent: 'Gelmedi',
+} as Record<Presence, string>)[p]
+
+export const presenceColor = (p: Presence) => ({
+  assigned: 'secondary',
+  checked_in: 'success',
+  on_break: 'warning',
+  checked_out: 'info',
+  absent: 'error',
+} as Record<Presence, string>)[p]
+
+export const isAbsent = (a: PersonnelAssignment) => presenceOf(a) === 'absent'
+export const isOnBreak = (a: PersonnelAssignment) => presenceOf(a) === 'on_break'
+
+/** Sahada olan (giriş yapmış, çıkış yapmamış) personel için mola/gelmedi işlemleri. */
+export type PresenceAction = 'absent' | 'present' | 'break_start' | 'break_end'
+
+export const presenceRequest = (dayId: number | string, assignmentId: number, action: PresenceAction) => {
+  const body = { assignment_id: assignmentId }
+  switch (action) {
+    case 'absent': return $api<{ message: string; assignment: PersonnelAssignment; summary: Summary }>(`/field/days/${dayId}/absent`, { method: 'POST', body: { ...body, absent: true } })
+    case 'present': return $api<{ message: string; assignment: PersonnelAssignment; summary: Summary }>(`/field/days/${dayId}/absent`, { method: 'POST', body: { ...body, absent: false } })
+    case 'break_start': return $api<{ message: string; assignment: PersonnelAssignment; summary: Summary }>(`/field/days/${dayId}/break/start`, { method: 'POST', body })
+    case 'break_end': return $api<{ message: string; assignment: PersonnelAssignment; summary: Summary }>(`/field/days/${dayId}/break/end`, { method: 'POST', body })
+  }
 }
 
 export const isCheckedIn = (a: PersonnelAssignment) => !!a.check_in_time

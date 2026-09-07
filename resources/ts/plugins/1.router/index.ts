@@ -48,6 +48,7 @@ const routePermissions: Record<string, string> = {
   'inventory-labels': 'inventory.view',
   'saha': 'field.access',
   'saha-day-id': 'field.access',
+  'canli': 'field.access',
   'projects-id-zones': 'projects.manage_days',
   'management-users': 'users.view',
   'management-roles': 'roles.view',

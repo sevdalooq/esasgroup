@@ -25,6 +25,12 @@ export default [
     permission: 'field.access',
   },
   {
+    title: 'Canlı İzleme',
+    to: { name: 'canli' },
+    icon: { icon: 'tabler-live-view' },
+    permission: 'field.access',
+  },
+  {
     heading: 'Master Data',
     permissions: ['customers.view', 'groups.view', 'personnel.view', 'inventory.view'],
   },

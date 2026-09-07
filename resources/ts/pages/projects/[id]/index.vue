@@ -2,6 +2,7 @@
 import DayStartWizard from '@/views/projects/DayStartWizard.vue'
 import DayEndWizard from '@/views/projects/DayEndWizard.vue'
 import { useAuthStore } from '@/stores/auth'
+import { getEcho } from '@/composables/useEcho'
 import { useSwal } from '@/composables/useSwal'
 
 const authStore = useAuthStore()
@@ -298,8 +299,10 @@ const transformAssignments = (assignments: any[]) => {
   }))
 }
 
-const fetchProject = async () => {
-  loading.value = true
+const fetchProject = async (silent = false) => {
+  if (!silent)
+    loading.value = true
+  const keepDayId = silent ? selectedDay.value?.id : null
   try {
     const response = await $api(`/projects/${route.params.id}`)
     // Ensure days have default empty arrays for assignments and transform snake_case to camelCase
@@ -316,7 +319,10 @@ const fetchProject = async () => {
       })
     }
     project.value = response
-    if (response.days?.length > 0) {
+    if (keepDayId && response.days?.some((d: any) => d.id === keepDayId)) {
+      selectedDay.value = response.days.find((d: any) => d.id === keepDayId)
+    }
+    else if (response.days?.length > 0) {
       selectedDay.value = response.days[0]
     }
   }
@@ -1408,6 +1414,28 @@ onMounted(async () => {
   fetchProjectPayments()
   fetchExpenseCategories()
   fetchGroups()
+})
+
+// Canlı: projenin günlerinde saha hareketi olunca projeyi sessizce yeniden çek (private-day.{id})
+const liveDayIds = new Set<number>()
+let liveTimer: ReturnType<typeof setTimeout> | null = null
+const onLiveDayEvent = () => {
+  if (liveTimer) clearTimeout(liveTimer)
+  liveTimer = setTimeout(() => fetchProject(true), 500)
+}
+watch(() => (project.value?.days || []).map(d => d.id), ids => {
+  const echo = getEcho()
+  if (!echo) return
+  ids.forEach(id => {
+    if (liveDayIds.has(id)) return
+    liveDayIds.add(id)
+    echo.private(`day.${id}`).listen('.day.updated', onLiveDayEvent)
+  })
+}, { immediate: true })
+onBeforeUnmount(() => {
+  const echo = getEcho()
+  liveDayIds.forEach(id => echo?.leave(`day.${id}`))
+  liveDayIds.clear()
 })
 </script>
 

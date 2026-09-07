@@ -29,6 +29,7 @@ declare module 'vue-router/auto-routes' {
     'accounting-personnel': RouteRecordInfo<'accounting-personnel', '/accounting/personnel', Record<never, never>, Record<never, never>>,
     'accounting-personnel-id': RouteRecordInfo<'accounting-personnel-id', '/accounting/personnel/:id', { id: ParamValue<true> }, { id: ParamValue<false> }>,
     'basvuru': RouteRecordInfo<'basvuru', '/basvuru', Record<never, never>, Record<never, never>>,
+    'canli': RouteRecordInfo<'canli', '/canli', Record<never, never>, Record<never, never>>,
     'customers': RouteRecordInfo<'customers', '/customers', Record<never, never>, Record<never, never>>,
     'customers-id-edit': RouteRecordInfo<'customers-id-edit', '/customers/:id/edit', { id: ParamValue<true> }, { id: ParamValue<false> }>,
     'customers-create': RouteRecordInfo<'customers-create', '/customers/create', Record<never, never>, Record<never, never>>,
