@@ -115,7 +115,10 @@ class PersonnelAssignment {
     this.paymentAmount = 0,
     this.dailyWage = 0,
     this.overtimeHours = 0,
+    this.overtimeRate = 0,
     this.totalEarnings = 0,
+    this.paymentMethod,
+    this.assignedInventory = const [],
     this.notes,
   });
 
@@ -137,11 +140,33 @@ class PersonnelAssignment {
   final double paymentAmount;
   final double dailyWage;
   final double overtimeHours;
+  final double overtimeRate;
   final double totalEarnings;
+
+  /// cash | bank | mixed | null
+  final String? paymentMethod;
+
+  /// `assigned_inventory`: bu personele zimmetlenen envanter (kısıtlı alanlarla).
+  final List<InventoryAssignment> assignedInventory;
   final String? notes;
 
   bool get isCheckedIn => isChecked || (checkInTime?.isNotEmpty ?? false);
   bool get isCheckedOut => checkOutTime?.isNotEmpty ?? false;
+
+  /// Giriş yapmış ama henüz çıkış yapmamış.
+  bool get isOnSite => isCheckedIn && !isCheckedOut;
+
+  /// Mesai saat ücreti önerisi: kayıtlı ücret yoksa yevmiye / 8.
+  double get suggestedOvertimeRate =>
+      overtimeRate > 0 ? overtimeRate : (dailyWage > 0 ? dailyWage / 8 : 0);
+
+  double get overtimeTotal => overtimeHours * overtimeRate;
+
+  /// Hakedişten ödenen düşülünce kalan.
+  double get remainingPayment {
+    final remaining = totalEarnings - paymentAmount;
+    return remaining < 0 ? 0 : remaining;
+  }
 
   String get displayName {
     if (fullName.isNotEmpty) return fullName;
@@ -157,9 +182,10 @@ class PersonnelAssignment {
         : asString(zoneRaw, asString(json['zone_name']));
     final qrCode = asStringOrNull(p['qr_code']);
     var qrPayload = asStringOrNull(p['qr_payload']);
-    // Bazı iç içe kopyalarda payload uuid'siz (`ESAS:PER:`) gelebiliyor.
-    if ((qrPayload == null || qrPayload.endsWith(':')) && qrCode != null) {
-      qrPayload = 'ESAS:PER:$qrCode';
+    // Bazı iç içe kopyalarda payload uuid'siz (`ESAS:PER:`) gelebiliyor;
+    // qr_code yoksa null sayılır ki taramada yanlış eşleşmesin.
+    if (qrPayload == null || qrPayload.endsWith(':')) {
+      qrPayload = qrCode != null ? 'ESAS:PER:$qrCode' : null;
     }
     return PersonnelAssignment(
       id: asInt(json['id']),
@@ -180,7 +206,12 @@ class PersonnelAssignment {
       paymentAmount: asDouble(json['payment_amount']),
       dailyWage: asDouble(json['daily_wage']),
       overtimeHours: asDouble(json['overtime_hours']),
+      overtimeRate: asDouble(json['overtime_rate']),
       totalEarnings: asDouble(json['total_earnings']),
+      paymentMethod: asStringOrNull(json['payment_method']),
+      assignedInventory: asMapList(json['assigned_inventory'])
+          .map(InventoryAssignment.fromJson)
+          .toList(),
       notes: asStringOrNull(json['notes']),
     );
   }
@@ -254,8 +285,8 @@ class InventoryAssignment {
     final holderPerson = asMap(holder['personnel']);
     final qrCode = asStringOrNull(inv['qr_code']);
     var qrPayload = asStringOrNull(inv['qr_payload']);
-    if ((qrPayload == null || qrPayload.endsWith(':')) && qrCode != null) {
-      qrPayload = 'ESAS:INV:$qrCode';
+    if (qrPayload == null || qrPayload.endsWith(':')) {
+      qrPayload = qrCode != null ? 'ESAS:INV:$qrCode' : null;
     }
     final holderName = asString(
       holderPerson['full_name'],
@@ -366,6 +397,7 @@ class ProjectDayDetail {
     this.personnel = const [],
     this.inventory = const [],
     this.zones = const [],
+    this.expenses = const [],
     this.summary = const DaySummary(),
   });
 
@@ -384,6 +416,7 @@ class ProjectDayDetail {
   final List<PersonnelAssignment> personnel;
   final List<InventoryAssignment> inventory;
   final List<Zone> zones;
+  final List<DayExpense> expenses;
   final DaySummary summary;
 
   bool get isPending => status == 'pending' || status.isEmpty;
@@ -395,10 +428,47 @@ class ProjectDayDetail {
   int get deliveredCount => inventory.where((i) => i.isDelivered).length;
   int get returnedCount => inventory.where((i) => i.isReturned).length;
 
+  /// Giriş yapmamış personel.
+  List<PersonnelAssignment> get notCheckedIn =>
+      personnel.where((p) => !p.isCheckedIn).toList();
+
+  /// Sahada olan (giriş yapmış, çıkış yapmamış) personel.
+  List<PersonnelAssignment> get onSite => personnel.where((p) => p.isOnSite).toList();
+
+  /// Henüz teslim edilmemiş envanter.
+  List<InventoryAssignment> get undeliveredInventory =>
+      inventory.where((i) => i.isPending).toList();
+
+  /// Teslim edilmiş, iadesi alınmamış envanter.
+  List<InventoryAssignment> get unreturnedInventory =>
+      inventory.where((i) => i.isDelivered).toList();
+
+  double get expensesTotal => expenses.fold(0, (sum, e) => sum + e.amount);
+
   /// Görevlendirme id'sinden personel satırı.
   PersonnelAssignment? assignmentById(int? assignmentId) => assignmentId == null
       ? null
       : personnel.where((p) => p.id == assignmentId).firstOrNull;
+
+  /// Bir personele zimmetli (teslim edilmiş, iade edilmemiş) envanter.
+  /// Önce gün listesinden `assigned_to_personnel_id` ile, yoksa
+  /// görevlendirmenin `assigned_inventory` kopyasından okunur.
+  List<InventoryAssignment> inventoryHeldBy(PersonnelAssignment assignment) {
+    final fromDay = inventory
+        .where((i) => i.assignedToAssignmentId == assignment.id && i.isDelivered)
+        .toList();
+    if (fromDay.isNotEmpty) return fromDay;
+    return assignment.assignedInventory.where((i) => i.isDelivered).toList();
+  }
+
+  /// Bir personele bugün teslim edilmiş tüm envanter (iade edilenler dahil).
+  List<InventoryAssignment> inventoryDeliveredTo(PersonnelAssignment assignment) {
+    final fromDay = inventory
+        .where((i) => i.assignedToAssignmentId == assignment.id && !i.isPending)
+        .toList();
+    if (fromDay.isNotEmpty) return fromDay;
+    return assignment.assignedInventory.where((i) => !i.isPending).toList();
+  }
 
   factory ProjectDayDetail.fromJson(Map<String, dynamic> raw) {
     // Gerçek API: {day:{...}, zones, summary}. Sözleşme/eski şekil: düz nesne veya {data:{...}}.
@@ -423,6 +493,9 @@ class ProjectDayDetail {
         .map(InventoryAssignment.fromJson)
         .toList();
     final zones = asMapList(raw['zones'] ?? json['zones']).map(Zone.fromJson).toList();
+    final expenses = asMapList(json['expenses'] ?? raw['expenses'])
+        .map(DayExpense.fromJson)
+        .toList();
     final summaryRaw = raw['summary'] ?? json['summary'];
 
     return ProjectDayDetail(
@@ -441,6 +514,7 @@ class ProjectDayDetail {
       personnel: personnel,
       inventory: inventory,
       zones: zones,
+      expenses: expenses,
       summary: summaryRaw is Map
           ? DaySummary.fromJson(asMap(summaryRaw))
           : DaySummary.compute(personnel, inventory),
@@ -486,5 +560,213 @@ class ScanResult {
         type: asString(json['type']),
         entity: asMap(json['entity']),
         context: asMap(json['context']),
+      );
+}
+
+
+/// `day.expenses[]` satırı: `{id, description, amount, category, status, receipt_photo}`.
+class DayExpense {
+  const DayExpense({
+    required this.id,
+    this.description = '',
+    this.amount = 0,
+    this.category = 'other',
+    this.status = 'pending',
+    this.receiptPhoto,
+    this.createdAt,
+  });
+
+  final int id;
+  final String description;
+  final double amount;
+
+  /// food | transport | material | accommodation | other (kategori slug'ı)
+  final String category;
+
+  /// pending | approved | rejected
+  final String status;
+  final String? receiptPhoto;
+  final DateTime? createdAt;
+
+  bool get isPending => status == 'pending' || status.isEmpty;
+
+  factory DayExpense.fromJson(Map<String, dynamic> json) {
+    final categoryRaw = json['category'];
+    return DayExpense(
+      id: asInt(json['id']),
+      description: asString(json['description']),
+      amount: asDouble(json['amount']),
+      category: categoryRaw is Map
+          ? asString(categoryRaw['slug'], 'other')
+          : asString(categoryRaw, 'other'),
+      status: asString(json['status'], 'pending'),
+      receiptPhoto: asStringOrNull(json['receipt_photo'] ?? json['receipt_photo_url']),
+      createdAt: asDateTime(json['created_at']),
+    );
+  }
+}
+
+/// `GET /expense-categories/all` → `[{id, name, slug, icon, color}]`.
+class ExpenseCategory {
+  const ExpenseCategory({
+    required this.slug,
+    required this.name,
+    this.id,
+    this.icon = '',
+    this.color = '',
+  });
+
+  final int? id;
+  final String slug;
+  final String name;
+  final String icon;
+  final String color;
+
+  factory ExpenseCategory.fromJson(Map<String, dynamic> json) => ExpenseCategory(
+        id: asIntOrNull(json['id']),
+        slug: asString(json['slug'], 'other'),
+        name: asString(json['name'], asString(json['slug'])),
+        icon: asString(json['icon']),
+        color: asString(json['color']),
+      );
+
+  /// Sunucuya ulaşılamazsa kullanılan sabit liste (backend `in:` kuralıyla aynı).
+  static const List<ExpenseCategory> defaults = [
+    ExpenseCategory(slug: 'food', name: 'Yemek', icon: 'tabler-tools-kitchen-2'),
+    ExpenseCategory(slug: 'transport', name: 'Ulaşım', icon: 'tabler-car'),
+    ExpenseCategory(slug: 'material', name: 'Malzeme', icon: 'tabler-package'),
+    ExpenseCategory(slug: 'accommodation', name: 'Konaklama', icon: 'tabler-building'),
+    ExpenseCategory(slug: 'other', name: 'Diğer', icon: 'tabler-dots'),
+  ];
+
+  static String nameOf(List<ExpenseCategory> categories, String slug) =>
+      categories.where((c) => c.slug == slug).firstOrNull?.name ??
+      defaults.where((c) => c.slug == slug).firstOrNull?.name ??
+      slug;
+}
+
+/// Çıkışta iade edilen bir envanter satırı (`inventory_returns[]`).
+class InventoryReturnEntry {
+  const InventoryReturnEntry({
+    required this.id,
+    this.returnStatus = 'returned',
+    this.damageDescription,
+    this.deductionAmount,
+  });
+
+  /// `project_day_inventory.id` (envanter görevlendirme id'si)
+  final int id;
+
+  /// returned | damaged
+  final String returnStatus;
+  final String? damageDescription;
+  final double? deductionAmount;
+
+  bool get isDamaged => returnStatus == 'damaged';
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'return_status': returnStatus,
+        if (isDamaged && damageDescription != null && damageDescription!.isNotEmpty)
+          'damage_description': damageDescription,
+        if (isDamaged && deductionAmount != null && deductionAmount! > 0)
+          'deduction_amount': deductionAmount,
+      };
+}
+
+/// `POST /field/days/{id}/check-out` gövdesi (JSON).
+class CheckOutRequest {
+  const CheckOutRequest({
+    required this.assignmentId,
+    this.checkOutTime,
+    this.overtimeHours = 0,
+    this.overtimeRate = 0,
+    this.paymentStatus = 'pending',
+    this.paymentMethod = 'cash',
+    this.paymentAmount = 0,
+    this.inventoryReturns = const [],
+  });
+
+  final int assignmentId;
+  final DateTime? checkOutTime;
+  final double overtimeHours;
+  final double overtimeRate;
+
+  /// paid | pending | partial
+  final String paymentStatus;
+
+  /// cash | bank | mixed
+  final String paymentMethod;
+  final double paymentAmount;
+  final List<InventoryReturnEntry> inventoryReturns;
+
+  double get overtimeTotal => overtimeHours * overtimeRate;
+
+  /// Yevmiye + mesai.
+  double totalEarnings(double dailyWage) => dailyWage + overtimeTotal;
+
+  double get deductionTotal =>
+      inventoryReturns.fold(0, (sum, r) => sum + (r.isDamaged ? (r.deductionAmount ?? 0) : 0));
+
+  /// Ödeme durumuna göre sunucunun kaydedeceği tutar.
+  double effectivePaymentAmount(double dailyWage) {
+    switch (paymentStatus) {
+      case 'paid':
+        return paymentAmount > 0 ? paymentAmount : totalEarnings(dailyWage);
+      case 'partial':
+        return paymentAmount;
+      default:
+        return 0;
+    }
+  }
+
+  double remaining(double dailyWage) {
+    final r = totalEarnings(dailyWage) - effectivePaymentAmount(dailyWage);
+    return r < 0 ? 0 : r;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'assignment_id': assignmentId,
+        if (checkOutTime != null)
+          'check_out_time': checkOutTime!.toUtc().toIso8601String(),
+        'overtime_hours': overtimeHours,
+        'overtime_rate': overtimeRate,
+        'payment_status': paymentStatus,
+        if (paymentStatus != 'pending') 'payment_method': paymentMethod,
+        if (paymentStatus != 'pending') 'payment_amount': paymentAmount,
+        if (inventoryReturns.isNotEmpty)
+          'inventory_returns': inventoryReturns.map((r) => r.toJson()).toList(),
+      };
+}
+
+/// Check-out yanıtı: `{message, assignment (assigned_inventory ile), summary}`.
+class CheckOutResult {
+  const CheckOutResult({this.message, this.assignment, this.summary});
+
+  final String? message;
+  final PersonnelAssignment? assignment;
+  final DaySummary? summary;
+
+  factory CheckOutResult.fromJson(Map<String, dynamic> json) => CheckOutResult(
+        message: asStringOrNull(json['message']),
+        assignment: json['assignment'] is Map
+            ? PersonnelAssignment.fromJson(asMap(json['assignment']))
+            : null,
+        summary: json['summary'] is Map ? DaySummary.fromJson(asMap(json['summary'])) : null,
+      );
+}
+
+/// Masraf ekleme yanıtı: 201 `{message, expense, expenses}`.
+class ExpenseResult {
+  const ExpenseResult({this.message, this.expense, this.expenses = const []});
+
+  final String? message;
+  final DayExpense? expense;
+  final List<DayExpense> expenses;
+
+  factory ExpenseResult.fromJson(Map<String, dynamic> json) => ExpenseResult(
+        message: asStringOrNull(json['message']),
+        expense: json['expense'] is Map ? DayExpense.fromJson(asMap(json['expense'])) : null,
+        expenses: asMapList(json['expenses']).map(DayExpense.fromJson).toList(),
       );
 }

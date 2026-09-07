@@ -23,7 +23,7 @@ class FieldRepository {
     return rows.map(ProjectDaySummary.fromJson).toList();
   }
 
-  /// GET /field/days/{id} → {day:{...}, zones:[...], summary:{...}}
+  /// GET /field/days/{id} → {day:{..., expenses:[...]}, zones:[...], summary:{...}}
   Future<ProjectDayDetail> day(int id) async {
     final res = await _api.get('/field/days/$id');
     return ProjectDayDetail.fromJson(asMap(res.data));
@@ -47,6 +47,8 @@ class FieldRepository {
 
   /// POST /field/days/{id}/check-in
   /// {personnel_payload | personnel_id, zone_payload | zone, photo?, lat?, lng?}
+  /// Güne atanmamış personel payload ile gönderilirse sunucu görevlendirmeyi
+  /// oluşturur ("son dakika ekle").
   Future<String?> checkIn(
     int dayId, {
     String? personnelPayload,
@@ -72,22 +74,26 @@ class FieldRepository {
     return _message(res);
   }
 
-  /// POST /field/days/{id}/check-out {personnel_payload | assignment_id, photo?}
-  Future<String?> checkOut(
-    int dayId, {
-    String? personnelPayload,
-    int? assignmentId,
-    XFile? photo,
-  }) async {
-    final fields = <String, dynamic>{
-      if (personnelPayload != null) 'personnel_payload': personnelPayload,
-      if (assignmentId != null) 'assignment_id': assignmentId,
-    };
+  /// POST /field/days/{id}/check-out (JSON)
+  /// {assignment_id, check_out_time, overtime_hours, overtime_rate,
+  ///  payment_status, payment_method, payment_amount, inventory_returns:[...]}
+  /// → {message, assignment, summary}
+  Future<CheckOutResult> checkOut(int dayId, CheckOutRequest request) async {
     final res = await _api.post(
       '/field/days/$dayId/check-out',
-      data: await _withPhoto(fields, 'photo', photo),
+      data: request.toJson(),
     );
-    return _message(res);
+    return CheckOutResult.fromJson(asMap(res.data));
+  }
+
+  /// POST /field/days/{id}/check-out {personnel_payload} – QR ile hızlı çıkış.
+  /// (Mesai/ödeme/iade seçenekleri olmadan; sunucu varsayılanları uygular.)
+  Future<CheckOutResult> checkOutByPayload(int dayId, String personnelPayload) async {
+    final res = await _api.post(
+      '/field/days/$dayId/check-out',
+      data: {'personnel_payload': personnelPayload},
+    );
+    return CheckOutResult.fromJson(asMap(res.data));
   }
 
   /// POST /field/days/{id}/inventory/deliver
@@ -162,19 +168,58 @@ class FieldRepository {
     return _message(res);
   }
 
+  // ---------------- Masraflar ----------------
+
+  /// GET /expense-categories/all → [{id, name, slug, icon, color}]
+  Future<List<ExpenseCategory>> expenseCategories() async {
+    final res = await _api.get('/expense-categories/all');
+    final rows = asMapList(res.data);
+    final list = rows.map(ExpenseCategory.fromJson).toList();
+    return list.isEmpty ? ExpenseCategory.defaults : list;
+  }
+
+  /// POST /field/days/{id}/expenses (multipart)
+  /// {description, amount, category, receipt_photo?} → 201 {message, expense, expenses}
+  Future<ExpenseResult> addExpense(
+    int dayId, {
+    required String description,
+    required double amount,
+    required String category,
+    XFile? receiptPhoto,
+  }) async {
+    final fields = <String, dynamic>{
+      'description': description,
+      'amount': amount,
+      'category': category,
+    };
+    final res = await _api.post(
+      '/field/days/$dayId/expenses',
+      data: await _withPhoto(fields, 'receipt_photo', receiptPhoto, forceMultipart: true),
+    );
+    return ExpenseResult.fromJson(asMap(res.data));
+  }
+
+  /// DELETE /field/days/{id}/expenses/{expenseId} (yalnızca `pending`)
+  Future<String?> deleteExpense(int dayId, int expenseId) async {
+    final res = await _api.delete('/field/days/$dayId/expenses/$expenseId');
+    return _message(res);
+  }
+
   String? _message(Response<dynamic> res) {
     final data = res.data;
     if (data is Map) return asStringOrNull(data['message']);
     return null;
   }
 
-  /// Fotoğraf varsa multipart, yoksa düz JSON gövde döndürür.
+  /// Fotoğraf varsa multipart, yoksa düz JSON gövde döndürür
+  /// ([forceMultipart] ile fotoğrafsız da multipart gönderilir).
   Future<Object> _withPhoto(
     Map<String, dynamic> fields,
     String fieldName,
-    XFile? photo,
-  ) async {
-    if (photo == null) return fields;
+    XFile? photo, {
+    bool forceMultipart = false,
+  }) async {
+    if (photo == null) return forceMultipart ? FormData.fromMap(fields) : fields;
     final name = photo.name.isEmpty ? 'photo.jpg' : photo.name;
     return FormData.fromMap({
       ...fields,

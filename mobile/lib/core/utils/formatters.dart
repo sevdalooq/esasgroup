@@ -98,6 +98,62 @@ String inventoryStatusLabel(String status) {
   }
 }
 
+/// Gün akışı aşaması (Bugün kartı / başlık): Başlamadı · Devam ediyor · Tamamlandı.
+String dayPhaseLabel(String status) {
+  switch (status) {
+    case 'pending':
+    case '':
+      return 'Başlamadı';
+    case 'active':
+      return 'Devam ediyor';
+    case 'completed':
+      return 'Tamamlandı';
+    case 'cancelled':
+      return 'İptal';
+    default:
+      return status;
+  }
+}
+
+String paymentMethodLabel(String? method) {
+  switch (method) {
+    case 'cash':
+      return 'Nakit';
+    case 'bank':
+      return 'Banka';
+    case 'mixed':
+      return 'Karışık';
+    case null:
+    case '':
+      return '-';
+    default:
+      return method;
+  }
+}
+
+String expenseStatusLabel(String status) {
+  switch (status) {
+    case 'pending':
+      return 'Onay bekliyor';
+    case 'approved':
+      return 'Onaylandı';
+    case 'rejected':
+      return 'Reddedildi';
+    case '':
+      return '-';
+    default:
+      return status;
+  }
+}
+
+/// `1.5` → `1,5 sa`.
+String formatHours(double hours) {
+  final text = hours == hours.roundToDouble()
+      ? hours.toInt().toString()
+      : hours.toStringAsFixed(1).replaceAll('.', ',');
+  return '$text sa';
+}
+
 String paymentStatusLabel(String status) {
   switch (status) {
     case 'paid':
@@ -112,4 +168,23 @@ String paymentStatusLabel(String status) {
     default:
       return status;
   }
+}
+
+/// Kullanıcının yazdığı tutarı (`1.250,50` / `1250.5`) sayıya çevirir.
+double? parseDecimal(String raw) {
+  var s = raw.trim().replaceAll('₺', '').replaceAll(' ', '');
+  if (s.isEmpty) return null;
+  if (s.contains(',') && s.contains('.')) {
+    // 1.250,50 → 1250.50
+    s = s.replaceAll('.', '').replaceAll(',', '.');
+  } else {
+    s = s.replaceAll(',', '.');
+  }
+  return double.tryParse(s);
+}
+
+/// Sayıyı giriş alanında göstermek için (`3600.0` → `3600`, `450.5` → `450,5`).
+String formatInputNumber(double value) {
+  if (value == value.roundToDouble()) return value.toInt().toString();
+  return value.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll('.', ',');
 }

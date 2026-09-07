@@ -88,6 +88,9 @@ class ApiClient {
   Future<Response<dynamic>> post(String path, {Object? data}) =>
       _guard(() => dio.post<dynamic>(path, data: data));
 
+  Future<Response<dynamic>> delete(String path, {Object? data}) =>
+      _guard(() => dio.delete<dynamic>(path, data: data));
+
   Future<Response<dynamic>> _guard(
     Future<Response<dynamic>> Function() call,
   ) async {

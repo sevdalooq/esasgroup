@@ -15,7 +15,8 @@ class PhotoResult {
 
 final ImagePicker _picker = ImagePicker();
 
-Future<XFile?> _pick(ImageSource source) async {
+/// Kamera/galeriden fotoğraf seçer; iptal veya hata durumunda null döner.
+Future<XFile?> pickPhoto(ImageSource source) async {
   try {
     return await _picker.pickImage(
       source: source,
@@ -73,13 +74,13 @@ Future<PhotoResult> askForPhoto(
     case _PhotoChoice.skip:
       return PhotoResult.skipped;
     case _PhotoChoice.camera:
-      final file = await _pick(ImageSource.camera);
+      final file = await pickPhoto(ImageSource.camera);
       if (file == null && context.mounted) {
         _notify(context, 'Kamera kullanılamadı, fotoğrafsız devam ediliyor.');
       }
       return PhotoResult(file: file);
     case _PhotoChoice.gallery:
-      final file = await _pick(ImageSource.gallery);
+      final file = await pickPhoto(ImageSource.gallery);
       return PhotoResult(file: file);
   }
 }

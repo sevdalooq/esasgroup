@@ -166,7 +166,7 @@ class _DayCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           StatusChip(
-                            label: dayStatusLabel(day.status),
+                            label: dayPhaseLabel(day.status),
                             color: color,
                           ),
                         ],
