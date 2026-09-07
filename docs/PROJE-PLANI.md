@@ -1,7 +1,23 @@
-# Esas Grup Yönetim Sistemi – Proje Planı (v0.1 taslak)
+# Esas Grup Yönetim Sistemi – Proje Planı (v0.2)
 
 > Tarih: 2026-09-07
-> Durum: **İlk keşif tamamlandı, gerçek gereksinim listesi bekleniyor.** Bu doküman, eski projelerin incelenmesinden çıkan bulguları ve önerilen yeniden yazım planını içerir. Gereksinimler netleştikçe güncellenecektir.
+> Durum: **Yerel proje ayağa kalktı.** Eski `esas-guvenlik` kod tabanı temizlenerek bu repoya taşındı, MySQL/Redis/Mailpit Docker'da, PHP ve Vite host üzerinde çalışıyor. **Hedef: Cuma (2026-09-11) müşteri sunumu.**
+
+## 0. Kararlar ve Gereksinim Güncellemesi (07.09.2026)
+
+**Yaklaşım kararı:** Sıfırdan yazmak yerine eski kod tabanı devralındı ("devamlılık"). Sebep: eski proje elimizdeki Vuexy starter kit ile birebir aynı çekirdeği kullanıyor, 30 ekran ve muhasebe mantığı hazır. Bilinen hatalar (§4.3) üzerinde düzeltilecek, yeni özellikler bunun üstüne eklenecek.
+
+**Müşteriden gelen dinamikler:**
+- Üç tip insan kaynağı: (1) şirketin kendi çalışanları, (2) doğrudan çalışılan bağımsız güvenlik görevlileri, (3) **ekipler** – örn. 100 kişilik grubu organize eden bir ekip lideri (Mehmet Kaplan örneği). Etkinlik için ekipten personel alınır, ekip liderine komisyon ödenir.
+- Eski sistemde bu akış çözülmüş durumda ve korunacak: `groups` = ekip/aracı firma (komisyon tipi sabit/yüzde/özel), `personnel.group_id` = personelin bağlı olduğu ekip, proje muhasebeleştirilince (`AccountingService::finalizeProject`) her personel için alacak (debit) + proje içinde ödenen (credit) kaydı, ekip için komisyon kaydı (`group_payments.type=commission`, taban = o ekibin personelinin toplam hakedişi) oluşur. Ekibe yapılan ödemeler `type=payment` olarak düşülür; bakiye = komisyon − ödeme. Personel bakiyesi = alacak − ödenen.
+
+**İstenen yeni özellikler (mobil ağırlıklı):**
+1. **QR / NFC ile envanter teslim & teslim alma** – her envanter kalemine QR etiketi/NFC tag; supervisor okutarak teslim eder, gün sonunda okutarak geri alır, hasar kaydı ekler.
+2. **QR ile personel "geldim" (check-in)** – etkinlik alanındaki nokta/alan QR'ları; görevli kendi telefonuyla veya supervisor'ın cihazıyla okutarak konum bazlı check-in yapar.
+3. **Dışarıdan personel kaydı (aday havuzu)** – güvenlik görevlileri uygulamadan/webden kayıt olur, CV/özlük bilgilerini doldurur (mevcut 50+ alanlı personel formu temel), belgelerini yükler; uygun iş çıktığında bildirim alır, işe başvurur/kabul eder.
+4. **İş bildirimleri** – görevlendirme, saat/yer değişikliği, iptal gibi değişikliklerde personele push/SMS bildirimi.
+
+**Sunum için hedeflenen demo (Cuma):** çalışan web paneli (gerçekçi örnek veriyle proje → planlama → gün başlat/bitir → muhasebeleştirme → bakiyeler), mobil akışların en azından web'de mobil görünümde veya Flutter iskeletiyle QR okutma demosu.
 
 ---
 
