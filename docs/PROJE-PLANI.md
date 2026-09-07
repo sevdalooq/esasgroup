@@ -238,10 +238,21 @@ security-app/
 - [x] Aday havuzu: herkese açık başvuru formu (`/basvuru`), belge yükleme, `tc_no_hash` ile mükerrer kontrolü, Başvurular ekranı (onay/red)
 - [x] Bildirim altyapısı: `notifications` tablosu, görevlendirme ve değişiklik bildirimleri (observer), e-posta (Mailpit), navbar zili, cihaz token kaydı (FCM için hazırlık)
 - [x] Flutter `mobile/` iskeleti (giriş, bugünkü görevler, QR okuma, check-in, envanter teslim/iade)
+- [x] Saha ekranı (web + mobil) eski projedeki gibi yönlendirilmiş akışa çevrildi: Gün Başlangıcı → Etkinlik → Gün Sonu → Tamamlandı; çıkışta mesai + zimmet iadesi + ödeme tek adımda; sahada masraf girişi
+
+### 08.09.2026 – Canlı altyapı
+- [x] **Websocket (Laravel Reverb)**: tüm gün içi değişiklikler (`LiveBroadcastObserver`) `private-live` ve `private-day.{id}` kanallarına yayınlanıyor; Sanctum token ile kanal yetkisi
+- [x] **Personel durumu (presence)**: bekleniyor / sahada / molada / çıkış yaptı / gelmedi; mola kayıtları ve toplam mola süresi
+- [x] **Konum**: mobilden periyodik konum (`/field/location`), `personnel_locations` geçmişi, personelde son konum; projelerde mekân koordinatı
+- [x] **Personel modu** (`/me/*`): görevlerim, alan QR'ı ile "geldim" (sorumlu doğrulaması bekler, `is_checked=false`), mola; `personnel` rolü ve demo hesabı
+- [x] **Canlı İzleme ekranı** (`/canli`): gün kartları, alan bazlı personel tablosu, Leaflet/OSM harita, olay akışı, bağlantı göstergesi
+- [x] Web ve Flutter ekranları websocket ile anında güncelleniyor (sayfa yenileme yok)
 
 ### Bilinen açıklar (sunum sonrası)
 - Gün sonu nakit ödemeleri kasaya `Transaction` olarak yansımıyor (eski davranış)
 - FCM push gönderimi henüz bağlı değil (token kaydı var)
+- Mobilde arka plan konum takibi yok (uygulama açıkken 60 sn'de bir); arka plan servisi ve pil optimizasyonu sunum sonrası
+- Reverb canlıda ayrı süreç/supervisor ile çalıştırılmalı, HTTPS (wss) yapılandırması gerekli
 - Ekibe iş bildirimi / başvuru eşleştirme (aday havuzundan projeye çağırma) akışı
 - Fatura modülü ve raporlama
 
