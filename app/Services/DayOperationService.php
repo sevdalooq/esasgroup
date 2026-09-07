@@ -136,23 +136,61 @@ class DayOperationService
     /**
      * Personel çıkış (check-out) – saha ekranı için hafif sürüm (mesai/ödeme sonradan web panelinde girilir).
      */
-    public function checkOut(ProjectDayPersonnel $assignment, ?string $photoPath = null): ProjectDayPersonnel
+    /**
+     * Personel çıkış (check-out). Mesai, ödeme ve zimmet iadesi bilgileriyle birlikte.
+     *
+     * @param array{check_out_time?:string|null, overtime_hours?:float|null, overtime_rate?:float|null,
+     *              payment_status?:string|null, payment_method?:string|null, payment_amount?:float|null,
+     *              inventory_returns?:array<int, array{id:int, return_status:string, damage_description?:string|null, deduction_amount?:float|null}>} $options
+     */
+    public function checkOut(ProjectDayPersonnel $assignment, ?string $photoPath = null, array $options = []): ProjectDayPersonnel
     {
         if (!$assignment->check_in_time) {
             throw ValidationException::withMessages(['assignment' => 'Bu personel henüz giriş yapmamış.']);
         }
 
-        $data = [
-            'check_out_time' => now(),
-            'total_earnings' => $assignment->calculateTotalEarnings(),
-        ];
-        if ($photoPath) {
-            $data['check_out_photo'] = $photoPath;
-        }
+        return DB::transaction(function () use ($assignment, $photoPath, $options) {
+            $overtimeHours = (float) ($options['overtime_hours'] ?? 0);
+            $overtimeRate = $overtimeHours > 0
+                ? (float) ($options['overtime_rate'] ?? $assignment->suggested_overtime_rate)
+                : (float) ($options['overtime_rate'] ?? $assignment->overtime_rate ?? 0);
+            $totalEarnings = (float) $assignment->daily_wage + ($overtimeHours * $overtimeRate);
 
-        $assignment->update($data);
+            $paymentStatus = $options['payment_status'] ?? $assignment->payment_status ?? 'pending';
+            $paymentAmount = $paymentStatus === 'pending' ? 0 : (float) ($options['payment_amount'] ?? 0);
+            if ($paymentStatus === 'paid' && $paymentAmount <= 0) {
+                $paymentAmount = $totalEarnings;
+            }
 
-        return $assignment;
+            $data = [
+                'check_out_time' => !empty($options['check_out_time']) ? $options['check_out_time'] : now(),
+                'overtime_hours' => $overtimeHours,
+                'overtime_rate' => $overtimeRate,
+                'total_earnings' => $totalEarnings,
+                'payment_status' => $paymentStatus,
+                'payment_method' => $paymentStatus === 'pending' ? null : ($options['payment_method'] ?? 'cash'),
+                'payment_amount' => $paymentAmount,
+            ];
+            if ($photoPath) {
+                $data['check_out_photo'] = $photoPath;
+            }
+            $assignment->update($data);
+
+            foreach ($options['inventory_returns'] ?? [] as $return) {
+                $item = ProjectDayInventory::find($return['id']);
+                if (!$item || $item->returned_at || !$item->delivered_at) {
+                    continue;
+                }
+                $this->returnItem(
+                    $item,
+                    ($return['return_status'] ?? 'returned') === 'damaged',
+                    $return['damage_description'] ?? null,
+                    isset($return['deduction_amount']) ? (float) $return['deduction_amount'] : null,
+                );
+            }
+
+            return $assignment->fresh();
+        });
     }
 
     /**

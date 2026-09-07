@@ -169,6 +169,17 @@ class FieldController extends Controller
             'personnel_id' => 'nullable|integer|exists:personnel,id',
             'assignment_id' => 'nullable|integer|exists:project_day_personnel,id',
             'photo' => $this->photoRule($request, 'photo'),
+            'check_out_time' => 'nullable|date',
+            'overtime_hours' => 'nullable|numeric|min:0|max:16',
+            'overtime_rate' => 'nullable|numeric|min:0',
+            'payment_status' => 'nullable|in:pending,partial,paid',
+            'payment_method' => 'nullable|in:cash,bank,mixed',
+            'payment_amount' => 'nullable|numeric|min:0',
+            'inventory_returns' => 'nullable|array',
+            'inventory_returns.*.id' => 'required|integer|exists:project_day_inventory,id',
+            'inventory_returns.*.return_status' => 'required|in:returned,damaged',
+            'inventory_returns.*.damage_description' => 'nullable|string|max:500',
+            'inventory_returns.*.deduction_amount' => 'nullable|numeric|min:0',
         ]);
 
         if (!empty($validated['assignment_id'])) {
@@ -187,7 +198,8 @@ class FieldController extends Controller
         }
 
         $photoPath = $this->dayOps->storeRequestPhoto($request, 'photo', 'check-out-photos');
-        $assignment = $this->dayOps->checkOut($assignment, $photoPath);
+        $assignment = $this->dayOps->checkOut($assignment, $photoPath, $validated);
+        $assignment->load('assignedInventory.inventory:' . self::INVENTORY_SELECT);
         $assignment->load('personnel:' . self::PERSONNEL_SELECT);
 
         return response()->json([
@@ -348,6 +360,50 @@ class FieldController extends Controller
     /**
      * QR etiket sayfası için tüm envanter (silinmemiş) – qr_payload dahil.
      */
+    /**
+     * Sahada masraf girişi (fiş fotoğrafı ile). Onay muhasebede yapılır.
+     */
+    public function storeExpense(Request $request, ProjectDay $projectDay): JsonResponse
+    {
+        $this->authorizeDay($request, $projectDay);
+
+        $validated = $request->validate([
+            'description' => 'required|string|max:255',
+            'amount' => 'required|numeric|min:0.01',
+            'category' => 'nullable|string|in:food,transport,material,accommodation,other',
+            'receipt_photo' => $this->photoRule($request, 'receipt_photo'),
+        ]);
+
+        $expense = $projectDay->expenses()->create([
+            'description' => $validated['description'],
+            'amount' => $validated['amount'],
+            'category' => $validated['category'] ?? 'other',
+            'receipt_photo' => $this->dayOps->storeRequestPhoto($request, 'receipt_photo', 'receipt-photos'),
+            'status' => 'pending',
+            'created_by' => $request->user()->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Masraf kaydedildi, onay bekliyor.',
+            'expense' => $expense,
+            'expenses' => $projectDay->expenses()->latest()->get(),
+        ], 201);
+    }
+
+    public function destroyExpense(Request $request, ProjectDay $projectDay, \App\Models\ProjectExpense $expense): JsonResponse
+    {
+        $this->authorizeDay($request, $projectDay);
+        if ($expense->project_day_id !== $projectDay->id) {
+            $this->fail('Masraf bu güne ait değil.', 'expense');
+        }
+        if ($expense->status !== 'pending') {
+            $this->fail('Onaylanmış/reddedilmiş masraf silinemez.', 'expense');
+        }
+        $expense->delete();
+
+        return response()->json(['message' => 'Masraf silindi.']);
+    }
+
     public function inventoryLabels(Request $request): JsonResponse
     {
         $query = Inventory::query()->orderBy('name');
@@ -423,6 +479,7 @@ class FieldController extends Controller
             'inventoryAssignments' => fn ($q) => $q->orderBy('id'),
             'inventoryAssignments.inventory:' . self::INVENTORY_SELECT,
             'inventoryAssignments.assignedToPersonnel.personnel:id,first_name,last_name',
+            'expenses' => fn ($q) => $q->latest(),
         ]);
 
         return [

@@ -204,6 +204,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/inventory/return', [FieldController::class, 'returnInventory']);
     Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/start', [FieldController::class, 'startDay']);
     Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/end', [FieldController::class, 'endDay']);
+    Route::middleware('permission:field.scan')->post('/field/days/{projectDay}/expenses', [FieldController::class, 'storeExpense']);
+    Route::middleware('permission:field.scan')->delete('/field/days/{projectDay}/expenses/{expense}', [FieldController::class, 'destroyExpense']);
     Route::middleware('permission:inventory.view')->get('/field/inventory/labels', [FieldController::class, 'inventoryLabels']);
     Route::middleware('permission:projects.view')->get('/field/projects/{project}/zones', [FieldController::class, 'zones']);
     Route::middleware('permission:projects.manage_days')->post('/field/projects/{project}/zones', [FieldController::class, 'storeZone']);
