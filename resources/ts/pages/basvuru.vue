@@ -238,8 +238,25 @@ const pickFile = (value: File | File[] | null | undefined): File | null => {
   return Array.isArray(value) ? (value[0] ?? null) : value
 }
 
+const FILE_LIMITS_MB: Record<'cv' | 'ogg_card' | 'photo', number> = { cv: 10, ogg_card: 10, photo: 5 }
+const FILE_LABELS: Record<'cv' | 'ogg_card' | 'photo', string> = { cv: 'CV', ogg_card: 'ÖGG kartı', photo: 'Fotoğraf' }
+
 const onFileChange = (key: 'cv' | 'ogg_card' | 'photo', value: File | File[] | null | undefined) => {
   const file = pickFile(value)
+
+  if (file && file.size > FILE_LIMITS_MB[key] * 1024 * 1024) {
+    files.value[key] = null
+    errors.value = { ...errors.value, [key]: [`${FILE_LABELS[key]} en fazla ${FILE_LIMITS_MB[key]} MB olabilir (seçilen: ${(file.size / 1024 / 1024).toFixed(1)} MB).`] }
+    serverMessage.value = `${FILE_LABELS[key]} dosyası çok büyük. Lütfen daha küçük bir dosya seçin.`
+
+    return
+  }
+
+  if (errors.value[key]) {
+    const next = { ...errors.value }
+    delete next[key]
+    errors.value = next
+  }
   files.value[key] = file
   if (key === 'photo') {
     photoPreview.value = null
@@ -307,6 +324,9 @@ const submit = async () => {
     }
     else if (err?.status === 429) {
       serverMessage.value = 'Çok fazla deneme yaptınız. Lütfen bir dakika sonra tekrar deneyin.'
+    }
+    else if (err?.status === 413) {
+      serverMessage.value = 'Yüklenen dosyalar toplamda çok büyük. Lütfen daha küçük dosyalar seçin (CV ve ÖGG kartı en fazla 10 MB, fotoğraf 5 MB).'
     }
     else {
       serverMessage.value = err?.data?.message || 'Başvuru gönderilemedi. Lütfen daha sonra tekrar deneyin.'

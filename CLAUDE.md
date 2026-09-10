@@ -10,7 +10,7 @@ Güvenlik ve etkinlik şirketi (Esas Güvenlik A.Ş. / Esas Group Danışmanlık
 ## Yerel geliştirme
 ```bash
 docker compose up -d          # mysql:3306 redis:6379 mailpit:8025 phpmyadmin:8080
-php artisan serve             # http://localhost:8000 (API + SPA shell)
+php -d upload_max_filesize=20M -d post_max_size=64M artisan serve   # API + SPA shell; dosya yükleme limitleri için -d şart
 npm run dev                   # Vite 5173 (HMR)
 php artisan migrate:fresh --seed
 php artisan reverb:start --port=8081   # websocket; olaylar app/Events (DayUpdated, PersonnelLocationUpdated), kanallar routes/channels.php

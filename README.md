@@ -21,7 +21,7 @@ php artisan storage:link
 Çalıştırma (iki terminal):
 
 ```bash
-php artisan serve                 # http://localhost:8000
+php -d upload_max_filesize=20M -d post_max_size=64M artisan serve   # http://localhost:8000 (dosya yükleme limitleri yükseltilmiş)
 npm run dev                       # Vite HMR (5173)
 php artisan reverb:start --port=8081   # Websocket (canlı izleme, anlık güncellemeler)
 ```
@@ -44,6 +44,12 @@ Demo verisini sıfırlamak için: `php artisan db:seed --class=Database\\Seeders
 - Saha ekranı (mobil uyumlu, QR): http://localhost:8000/saha
 - Canlı izleme (durum + harita): http://localhost:8000/canli
 - E-posta kutusu (Mailpit): http://localhost:8025
+
+## Canlıya alırken
+
+- PHP: `upload_max_filesize=20M`, `post_max_size=64M` (başvuru formu CV/fotoğraf yüklemeleri)
+- Nginx: `client_max_body_size 64m;`
+- Reverb ayrı süreç olarak (supervisor/systemd), `wss` için reverse proxy
 
 ## Yapı
 
