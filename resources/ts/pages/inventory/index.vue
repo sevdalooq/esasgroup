@@ -2,6 +2,28 @@
 import { useSwal } from '@/composables/useSwal'
 
 const swal = useSwal()
+import QrLabel from '@/views/field/QrLabel.vue'
+
+const qrItem = ref<Inventory | null>(null)
+const showQrDialog = ref(false)
+
+const openQrDialog = (item: Inventory) => {
+  qrItem.value = item
+  showQrDialog.value = true
+}
+
+const printQrLabel = () => {
+  const node = document.getElementById('inventory-qr-print')
+  if (!node)
+    return
+  const w = window.open('', '_blank', 'width=420,height=520')
+  if (!w)
+    return
+  w.document.write(`<html><head><title>QR Etiketi</title><style>body{font-family:sans-serif;text-align:center;padding:24px}img{max-width:100%}</style></head><body>${node.innerHTML}</body></html>`)
+  w.document.close()
+  w.focus()
+  setTimeout(() => { w.print(); w.close() }, 300)
+}
 
 interface Personnel {
   id: number
@@ -16,6 +38,9 @@ interface Inventory {
   unit: string | null
   unit_price: number | null
   serial_number: string | null
+  nfc_uid?: string | null
+  qr_code?: string
+  qr_payload?: string
   daily_rate: number
   purchase_cost: number
   current_status: 'available' | 'in_use' | 'maintenance' | 'damaged' | 'lost'
@@ -54,6 +79,7 @@ const form = ref({
   unit: '',
   unit_price: 0,
   serial_number: '',
+  nfc_uid: '',
   daily_rate: 0,
   purchase_cost: 0,
   current_status: 'available' as 'available' | 'in_use' | 'maintenance' | 'damaged' | 'lost',
@@ -180,6 +206,7 @@ const openDialog = (item?: Inventory) => {
       unit: item.unit || '',
       unit_price: item.unit_price || 0,
       serial_number: item.serial_number || '',
+      nfc_uid: item.nfc_uid || '',
       daily_rate: item.daily_rate,
       purchase_cost: item.purchase_cost || 0,
       current_status: item.current_status,
@@ -194,6 +221,7 @@ const openDialog = (item?: Inventory) => {
       unit: '',
       unit_price: 0,
       serial_number: '',
+      nfc_uid: '',
       daily_rate: 0,
       purchase_cost: 0,
       current_status: 'available',
@@ -449,7 +477,17 @@ onMounted(() => {
             @click="openDetailDialog(item)"
           >
             <VIcon icon="tabler-eye" />
-            <VTooltip activator="parent">Incele</VTooltip>
+            <VTooltip activator="parent">İncele</VTooltip>
+          </VBtn>
+          <VBtn
+            icon
+            variant="text"
+            size="small"
+            color="secondary"
+            @click="openQrDialog(item)"
+          >
+            <VIcon icon="tabler-qrcode" />
+            <VTooltip activator="parent">QR Etiketi</VTooltip>
           </VBtn>
           <VBtn
             icon
@@ -459,7 +497,7 @@ onMounted(() => {
             @click="openDialog(item)"
           >
             <VIcon icon="tabler-edit" />
-            <VTooltip activator="parent">Duzenle</VTooltip>
+            <VTooltip activator="parent">Düzenle</VTooltip>
           </VBtn>
           <VBtn
             icon
@@ -516,8 +554,16 @@ onMounted(() => {
               <VCol cols="12" md="6">
                 <AppTextField
                   v-model="form.serial_number"
-                  label="Seri Numarasi"
+                  label="Seri Numarası"
                   :error-messages="errors.serial_number"
+                />
+              </VCol>
+              <VCol cols="12" md="6">
+                <AppTextField
+                  v-model="form.nfc_uid"
+                  label="NFC Etiket UID (opsiyonel)"
+                  placeholder="04:A3:2B:..."
+                  :error-messages="errors.nfc_uid"
                 />
               </VCol>
               <VCol cols="12" md="6">
@@ -590,6 +636,44 @@ onMounted(() => {
     </VDialog>
 
     <!-- Assign Dialog -->
+    <VDialog v-model="showQrDialog" max-width="420">
+      <VCard v-if="qrItem">
+        <VCardTitle class="d-flex align-center gap-2">
+          <VIcon icon="tabler-qrcode" />
+          QR Etiketi
+        </VCardTitle>
+        <VCardText class="text-center">
+          <div id="inventory-qr-print">
+            <QrLabel
+              :value="qrItem.qr_payload || ''"
+              :title="qrItem.name"
+              :subtitle="qrItem.serial_number || ''"
+              :caption="qrItem.qr_payload || ''"
+              :size="220"
+            />
+          </div>
+          <div
+            v-if="qrItem.nfc_uid"
+            class="text-caption mt-2"
+          >
+            NFC UID: {{ qrItem.nfc_uid }}
+          </div>
+          <VAlert
+            type="info"
+            variant="tonal"
+            density="compact"
+            class="mt-4 text-start"
+          >
+            Etiketi yazdırıp malzemenin üzerine yapıştırın. Sahada bu QR okutularak teslim ve iade yapılır. Toplu yazdırma için "QR Etiketleri" sayfasını kullanın.
+          </VAlert>
+        </VCardText>
+        <VCardActions class="justify-end">
+          <VBtn variant="outlined" @click="showQrDialog = false">Kapat</VBtn>
+          <VBtn color="primary" prepend-icon="tabler-printer" @click="printQrLabel">Yazdır</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
     <VDialog v-model="showAssignDialog" max-width="400">
       <VCard>
         <VCardTitle class="pa-4">
