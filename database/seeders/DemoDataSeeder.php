@@ -35,6 +35,9 @@ use Illuminate\Support\Str;
  * Sunum / geliştirme için gerçekçi Türkçe demo verisi.
  *
  * - Yalnızca boş bir veritabanına yazar (müşteri varsa atlar).
+ * - Tüm tarihler today() üzerinden görelidir; yeniden çalıştırıldığında takvim yine bugünden
+ *   itibaren 14 gün dolu gelir (D..D+13 her günde en az bir proje günü).
+ * - Aynı personel aynı tarihte iki projeye atanmaz (pickTeam rezervasyon tablosu).
  * - Muhasebe kayıtları elle yazılmaz; AccountingService üzerinden üretilir.
  * - Yeniden üretmek için: php artisan db:seed --class=Database\\Seeders\\Demo\\DemoDataResetSeeder
  *   ardından: php artisan db:seed --class=DemoDataSeeder
@@ -68,6 +71,14 @@ class DemoDataSeeder extends Seeder
     /** @var array<string, int> */
     private array $usedTc = [];
 
+    /** @var array<string, array<int, true>> tarih (Y-m-d) => rezerve personel id'leri */
+    private array $booked = [];
+
+    /** @var array<string, int> havuz => rotasyon imleci */
+    private array $cursor = [];
+
+    private int $offerSeq = 0;
+
     public function run(): void
     {
         if (Customer::count() > 0) {
@@ -90,16 +101,25 @@ class DemoDataSeeder extends Seeder
             $this->createInventory();
             $this->createGlobalZones();
 
-            $this->createZorluProject();
+            // Geçmiş (muhasebe/bakiye)
             $this->createCocaColaProject();
+            $this->createZorluProject();
+            $this->createAnadoluAjansiProject();
+            // Takvim: bugünden itibaren 14 gün dolu
             $this->createTv100Project();
             $this->createSisliProject();
+            $this->createFuarProject();
+            $this->createKocaeliProject();
             $this->createSiemensProject();
+            $this->createAvmProject();
             $this->createRumeliProject();
+            $this->createBankaProject();
+            $this->createBogaziciProject();
+            $this->createVipProject();
 
             $this->createPersonnelDocuments();
             $this->backfill();
-        $this->seedLiveDemo();
+            $this->seedLiveDemo();
         });
 
         $this->command?->info(sprintf(
@@ -473,6 +493,76 @@ class DemoDataSeeder extends Seeder
                     ['Ece Karahan', 'Kurucu', 'ece@kendinedonuskampi.com', true],
                 ],
             ],
+            'fuar' => [
+                'name' => 'İstanbul Fuar Merkezi A.Ş.',
+                'tax_number' => '4810023456', 'tax_office' => 'Bakırköy',
+                'trade_registry_no' => '318842-0', 'trade_registry_office' => 'İstanbul Ticaret Sicil Müdürlüğü',
+                'address' => 'Yeşilköy Mah. Atatürk Cad. No:9, Bakırköy / İstanbul',
+                'phone' => '0212 465 74 74', 'email' => 'operasyon@ifm.com.tr',
+                'is_e_invoice' => true,
+                'description' => 'Fuar ve kongre etkinlikleri; x-ray ve turnike talep eden kurumsal müşteri.',
+                'contacts' => [
+                    ['Serdar Kılınç', 'Fuar Operasyon Müdürü', 'serdar.kilinc@ifm.com.tr', true],
+                    ['Aylin Demirci', 'Güvenlik Koordinatörü', 'aylin.demirci@ifm.com.tr', false],
+                ],
+            ],
+            'bogazici_uni' => [
+                'name' => 'Boğaziçi Üniversitesi',
+                'tax_number' => '1780056789', 'tax_office' => 'Beşiktaş',
+                'address' => 'Bebek Mah. Güney Kampüs, Beşiktaş / İstanbul',
+                'phone' => '0212 359 54 00', 'email' => 'idari@bogazici.edu.tr',
+                'is_e_invoice' => true,
+                'description' => 'Mezuniyet, açılış ve kampüs etkinlikleri. Kamu ihale mevzuatına göre faturalama.',
+                'contacts' => [
+                    ['Prof. Dr. Levent Aktaş', 'Genel Sekreter Yardımcısı', 'levent.aktas@bogazici.edu.tr', true],
+                    ['Gamze Ulusoy', 'Etkinlik Ofisi', 'gamze.ulusoy@bogazici.edu.tr', false],
+                ],
+            ],
+            'vip' => [
+                'name' => 'Aşkım Kapışmak Organizasyon',
+                'tax_number' => '0910067823', 'tax_office' => 'Beyoğlu',
+                'address' => 'Cihangir Mah. Sıraselviler Cad. No:44, Beyoğlu / İstanbul',
+                'phone' => '0532 604 88 21', 'email' => 'menajer@askimkapismak.com',
+                'is_e_archive' => true,
+                'description' => 'Sanatçı menajerliği; kişi koruma ve konser turne güvenliği.',
+                'contacts' => [
+                    ['Berk Kapışmak', 'Menajer', 'berk@askimkapismak.com', true],
+                ],
+            ],
+            'kocaeli' => [
+                'name' => 'Kocaeli Büyükşehir Belediyesi',
+                'tax_number' => '5670012345', 'tax_office' => 'İzmit',
+                'address' => 'Karabaş Mah. Salim Dervişoğlu Cad. No:80, İzmit / Kocaeli',
+                'phone' => '0262 318 10 00', 'email' => 'kultur@kocaeli.bel.tr',
+                'is_e_invoice' => true,
+                'description' => 'Kültür ve Sosyal İşler Dairesi konser ve festival etkinlikleri.',
+                'contacts' => [
+                    ['Tuncay Erdem', 'Kültür İşleri Şube Müdürü', 'tuncay.erdem@kocaeli.bel.tr', true],
+                ],
+            ],
+            'avm' => [
+                'name' => 'Marmara Forum AVM İşletmeciliği',
+                'tax_number' => '6120098765', 'tax_office' => 'Bakırköy',
+                'trade_registry_no' => '702316-0', 'trade_registry_office' => 'İstanbul Ticaret Sicil Müdürlüğü',
+                'address' => 'Osmaniye Mah. Çobançeşme Koşuyolu Bulvarı No:3, Bakırköy / İstanbul',
+                'phone' => '0212 466 50 00', 'email' => 'guvenlik@marmaraforum.com',
+                'is_e_invoice' => true,
+                'description' => 'Yoğun hafta sonları ve kampanya dönemlerinde takviye personel.',
+                'contacts' => [
+                    ['Ercan Yalçın', 'AVM Güvenlik Müdürü', 'ercan.yalcin@marmaraforum.com', true],
+                ],
+            ],
+            'banka' => [
+                'name' => 'DenizBank Anadolu Yakası Bölge Müdürlüğü',
+                'tax_number' => '2920034512', 'tax_office' => 'Büyük Mükellefler',
+                'address' => 'Caferağa Mah. Moda Cad. No:12, Kadıköy / İstanbul',
+                'phone' => '0216 348 20 00', 'email' => 'idariisler.anadolu@denizbank.com',
+                'is_e_invoice' => true,
+                'description' => 'Şube açılışları ve bölge toplantıları.',
+                'contacts' => [
+                    ['Neslihan Koray', 'İdari İşler Yöneticisi', 'neslihan.koray@denizbank.com', true],
+                ],
+            ],
         ];
 
         foreach ($defs as $key => $def) {
@@ -553,89 +643,85 @@ class DemoDataSeeder extends Seeder
     }
 
     // ---------------------------------------------------------------
-    // Projeler
+    // Projeler (tümü bugüne göre göreli; D = today)
+    //
+    //  Geçmiş : Coca-Cola D-20 · Zorlu D-9..D-7 · Anadolu Ajansı D-2
+    //  Takvim : TV100 D..D+1 · Şişli D+2..D+5 · Fuar D+3..D+6 · Kocaeli(iptal) D+4 · VIP(taslak) D+6
+    //           Siemens D+7..D+8 · AVM D+8 · Rumeli(teklif) D+9..D+11 · Banka D+10 · Boğaziçi D+12..D+13
     // ---------------------------------------------------------------
 
-    /** 1) Tamamlanmış ve muhasebeleştirilmiş büyük konser projesi */
+    /** 1) Geçen ay tamamlanmış, muhasebeleştirilmiş ve tamamı tahsil edilmiş küçük kurumsal etkinlik */
+    private function createCocaColaProject(): void
+    {
+        $date = $this->d(-20);
+
+        $project = $this->newProject('cocacola', 'Coca-Cola Bayi Toplantısı', $date, $date, 'active', [
+            'account_id' => $this->accounts['kasa']->id,
+            'approved_at' => $date->copy()->subDays(9)->setTime(15, 5),
+            'approved_by' => $this->mudur->id,
+            'notes' => 'Ümraniye genel merkez konferans salonu. 400 bayi. Karşılama için 2 hostes, giriş kontrolü için kapı dedektörü.',
+        ], ['Coca-Cola İçecek Genel Merkezi, Ümraniye / İstanbul', 41.0206, 29.1230]);
+
+        $zones = ['Ana Giriş', 'Salon İçi', 'Karşılama Masası', 'Otopark'];
+        $this->zones($project, $zones);
+
+        $team = $this->pickTeam([$date], ['internal' => 1, 'freelance' => 1, 'bogazici' => 2, 'yildiz' => 2]);
+
+        $day = $this->newDay($project, $date, $this->saha, 'completed', [
+            'notes' => 'Sorunsuz tamamlandı. Müşteri hostes ekibinden memnun kaldı.',
+        ]);
+
+        $assignments = $this->completedAssignments($day, $team, $zones, [7, 30], [18, 0], fn (int $i) => $i === 1 ? 'paid' : 'pending');
+
+        $this->assignInventory($day, $this->inventory['kapidedektor'][2], null, $date);
+        $this->assignInventory($day, $this->inventory['eldedektor'][4], $assignments[0], $date);
+        foreach ($this->inventory['telsiz']->slice(8, 3)->values() as $i => $item) {
+            $this->assignInventory($day, $item, $assignments[$i], $date);
+        }
+
+        $this->expense($day, 'Ekip ulaşımı (Ümraniye)', 900, 'transport')->approve($this->mudur->id);
+
+        $this->touch('project_days', $day->id, $date->copy()->setTime(7, 0), $date->copy()->setTime(19, 0));
+        $this->priceProject($project, 'completed');
+        $this->touch('projects', $project->id, $date->copy()->subDays(12), $date->copy()->addDay()->setTime(9, 30));
+
+        $this->accounting->finalizeProject($project->fresh(), $this->mudur->id);
+        $this->customerPayment($project, (float) $project->fresh()->offer_price, 'garanti', $date->copy()->addDays(8), 'TAH-2026-0006', 'Bayi toplantısı - tam ödeme');
+    }
+
+    /** 2) Geçen hafta tamamlanmış ve muhasebeleştirilmiş büyük konser projesi (3 gece) */
     private function createZorluProject(): void
     {
-        $start = $this->today->copy()->subDays(16);
-        $end = $start->copy()->addDays(2);
+        $start = $this->d(-9);
+        $end = $this->d(-7);
+        $dates = $this->range($start, 3);
 
-        $project = Project::create([
-            'customer_id' => $this->customers['zorlu']->id,
+        $project = $this->newProject('zorlu', 'Zorlu PSM Konser Güvenliği', $start, $end, 'active', [
             'account_id' => $this->accounts['kasa']->id,
-            'offer_number' => 'TKL-2026-0001',
-            'name' => 'Zorlu PSM Konser Güvenliği',
-            'start_date' => $start,
-            'end_date' => $end,
-            'status' => 'active',
-            'requires_approval' => true,
             'approved_at' => $start->copy()->subDays(10)->setTime(11, 20),
             'approved_by' => $this->admin->id,
-            'offer_price' => 250000,
-            'delivery_type' => 'standard',
             'notes' => "3 gece üst üste konser. Kapasite 2.500 kişi. X-ray ve kapı dedektörü ana girişte; kulis ve VIP alanı için ayrı ekip.\nMüşteri yemek sağlıyor, ulaşım bizde.",
-        ]);
+        ], ['Zorlu Center, Beşiktaş / İstanbul', 41.0667, 29.0170]);
 
         $zones = ['Ana Giriş', 'Sahne Önü', 'Kulis', 'VIP Alanı', 'Otopark'];
         $this->zones($project, $zones);
 
-        $team = $this->activeStaff('internal', 6)
-            ->merge($this->activeStaff('kaplan', 8))
-            ->merge($this->activeStaff('freelance', 4));
-
+        $team = $this->pickTeam($dates, ['internal' => 6, 'kaplan' => 8, 'freelance' => 4]);
         $damagedTelsiz = $this->inventory['telsiz'][7];
 
-        for ($d = 0; $d < 3; $d++) {
-            $date = $start->copy()->addDays($d);
-
-            $day = ProjectDay::create([
-                'project_id' => $project->id,
-                'date' => $date,
-                'supervisor_id' => $this->saha->id,
-                'status' => 'completed',
-                'start_photo' => self::PHOTO_PATH,
-                'end_photo' => self::PHOTO_PATH,
+        foreach ($dates as $d => $date) {
+            $day = $this->newDay($project, $date, $this->saha, 'completed', [
                 'notes' => ['Kapı açılışı 18:30, konser 21:00.', 'Yoğun gün; VIP alanına 2 ek görevli kaydırıldı.', 'Son gece; ekipman toplama 01:30\'da bitti.'][$d],
             ]);
 
-            $assignments = [];
-            foreach ($team as $i => $personnel) {
-                $wage = (float) $personnel->default_wage;
-                $overtimeHours = ($i % 5 === 0) ? 2 : (($i % 7 === 0) ? 1.5 : 0);
-                $overtimeRate = $overtimeHours > 0 ? round($wage / 8 * 1.5, 2) : 0;
-                $total = $wage + $overtimeHours * $overtimeRate;
-
-                [$status, $method, $amount] = match ($i % 4) {
-                    0 => ['paid', 'cash', $total],
-                    1 => ['partial', 'cash', 1000.0],
-                    default => ['pending', null, 0.0],
-                };
-
-                $assignments[] = ProjectDayPersonnel::create([
-                    'project_day_id' => $day->id,
-                    'personnel_id' => $personnel->id,
-                    'daily_wage' => $wage,
-                    'overtime_hours' => $overtimeHours,
-                    'overtime_rate' => $overtimeRate,
-                    'total_earnings' => $total,
-                    'zone' => $zones[$i % count($zones)],
-                    'check_in_time' => $date->copy()->setTime(17, 15)->addMinutes(mt_rand(0, 50)),
-                    'check_in_photo' => self::PHOTO_PATH,
-                    'check_out_time' => $date->copy()->addDay()->setTime(0, 40)->addMinutes(mt_rand(0, 45) + (int) ($overtimeHours * 60)),
-                    'check_out_photo' => self::PHOTO_PATH,
-                    'payment_status' => $status,
-                    'payment_method' => $method,
-                    'payment_amount' => $amount,
-                    'is_checked' => true,
-                    'notes' => $overtimeHours > 0 ? 'Ekipman toplama için mesaiye kaldı.' : null,
-                ]);
-            }
+            $assignments = $this->completedAssignments(
+                $day, $team, $zones, [17, 15], [24, 40],
+                fn (int $i) => match ($i % 4) { 0 => 'paid', 1 => 'partial', default => 'pending' },
+                fn (int $i) => ($i % 5 === 0) ? 2.0 : (($i % 7 === 0) ? 1.5 : 0.0),
+            );
 
             // Telsizler: ilk 8 görevliye; el dedektörleri: giriş ekibine
-            $telsizler = $this->inventory['telsiz']->slice(4, 8)->values();
-            foreach ($telsizler as $i => $item) {
+            foreach ($this->inventory['telsiz']->slice(4, 8)->values() as $i => $item) {
                 $isDamaged = ($d === 2 && $item->is($damagedTelsiz));
                 $pdi = $this->assignInventory($day, $item, $assignments[$i], $date, $isDamaged ? 'damaged' : 'returned');
 
@@ -657,17 +743,7 @@ class DemoDataSeeder extends Seeder
             foreach ($this->inventory['eldedektor']->slice(0, 4)->values() as $i => $item) {
                 $this->assignInventory($day, $item, $assignments[8 + $i], $date);
             }
-
-            foreach ($this->inventory['kapidedektor']->slice(0, 2) as $item) {
-                $this->assignInventory($day, $item, null, $date);
-            }
-            $this->assignInventory($day, $this->inventory['xray'][0], null, $date);
-            foreach ($this->inventory['mojo'] as $item) {
-                $this->assignInventory($day, $item, null, $date);
-            }
-            foreach ($this->inventory['polis']->slice(0, 9) as $item) {
-                $this->assignInventory($day, $item, null, $date);
-            }
+            $this->rentals($day, $date, ['kapidedektor' => 2, 'xray' => 1, 'mojo' => 8, 'polis' => 9], 'returned');
 
             // Masraflar
             if ($d === 0) {
@@ -685,14 +761,14 @@ class DemoDataSeeder extends Seeder
             $this->touch('project_days', $day->id, $date->copy()->setTime(16, 0), $date->copy()->addDay()->setTime(2, 0));
         }
 
-        $project->update(['status' => 'completed', 'estimated_cost' => $this->estimateCost($project)]);
+        $this->priceProject($project, 'completed');
         $this->touch('projects', $project->id, $start->copy()->subDays(14), $end->copy()->addDay()->setTime(10, 0));
 
         // Muhasebeleştirme: gerçek iş mantığı
         $this->accounting->finalizeProject($project->fresh(), $this->admin->id);
 
         // Tahsilat (kısmi): 150.000 TL Garanti'ye
-        $this->customerPayment($project, 150000, 'garanti', $end->copy()->addDays(4), 'TAH-2026-0007', 'Konser güvenliği 1. hakediş (%60)');
+        $this->customerPayment($project, 150000, 'garanti', $end->copy()->addDays(4), 'TAH-2026-0007', 'Konser güvenliği 1. hakediş');
 
         // Kaplan ekibine komisyon avansı
         $this->accounting->makeGroupPayment(
@@ -701,293 +777,471 @@ class DemoDataSeeder extends Seeder
         );
 
         // Personel ödemeleri (kasadan) — sahada ödenmemiş (pending) bakiyesi olan kişilere kısmi ödeme
-        $this->accounting->makePersonnelPayment($this->staff['internal'][2], 5000, $this->accounts['kasa']->id, $this->admin->id, $project->id, 'Zorlu PSM hakediş ödemesi');
-        $this->accounting->makePersonnelPayment($this->staff['freelance'][0], 2500, $this->accounts['kasa']->id, $this->admin->id, $project->id, 'Zorlu PSM hakediş ödemesi');
-        $this->accounting->makePersonnelPayment($this->staff['kaplan'][0], 4000, $this->accounts['kasa']->id, $this->admin->id, $project->id, 'Zorlu PSM hakediş ödemesi (ekip lideri aracılığıyla)');
+        // (i % 4 === 2 olan sıralar sahada 'pending' kaldı: 2 kadrolu, 6 Kaplan, 14 freelance)
+        $this->accounting->makePersonnelPayment($team[2], 5000, $this->accounts['kasa']->id, $this->admin->id, $project->id, 'Zorlu PSM hakediş ödemesi');
+        $this->accounting->makePersonnelPayment($team[14], 2500, $this->accounts['kasa']->id, $this->admin->id, $project->id, 'Zorlu PSM hakediş ödemesi');
+        $this->accounting->makePersonnelPayment($team[6], 4000, $this->accounts['kasa']->id, $this->admin->id, $project->id, 'Zorlu PSM hakediş ödemesi (ekip lideri aracılığıyla)');
     }
 
-    /** 2) Geçen ay tamamlanmış küçük kurumsal etkinlik */
-    private function createCocaColaProject(): void
+    /** 3) Önceki gün tamamlanmış, henüz MUHASEBELEŞTİRİLMEMİŞ basın toplantısı (canlı "Muhasebeleştir" demosu) */
+    private function createAnadoluAjansiProject(): void
     {
-        $date = $this->today->copy()->subDays(26);
+        $date = $this->d(-2);
 
-        $project = Project::create([
-            'customer_id' => $this->customers['cocacola']->id,
+        $project = $this->newProject('aa', 'Anadolu Ajansı Basın Toplantısı', $date, $date, 'active', [
             'account_id' => $this->accounts['kasa']->id,
-            'offer_number' => 'TKL-2026-0002',
-            'name' => 'Coca-Cola Bayi Toplantısı',
-            'start_date' => $date,
-            'end_date' => $date,
-            'status' => 'active',
-            'requires_approval' => true,
-            'approved_at' => $date->copy()->subDays(9)->setTime(15, 5),
+            'approved_at' => $date->copy()->subDays(5)->setTime(9, 40),
             'approved_by' => $this->mudur->id,
-            'offer_price' => 45000,
-            'delivery_type' => 'standard',
-            'notes' => 'Ümraniye genel merkez konferans salonu. 400 bayi. Karşılama için 2 hostes, giriş kontrolü için kapı dedektörü.',
-        ]);
+            'notes' => 'Levent bölge müdürlüğü konferans salonu, 120 davetli basın mensubu. Akreditasyon masası ve salon girişi kontrolü. Gün tamamlandı; muhasebeleştirme bekliyor.',
+        ], ['Anadolu Ajansı İstanbul Bölge Müdürlüğü, Levent / İstanbul', 41.0790, 29.0110]);
 
-        $zones = ['Ana Giriş', 'Salon İçi', 'Karşılama Masası', 'Otopark'];
+        $zones = ['Akreditasyon Masası', 'Salon Girişi', 'Sahne Önü', 'Otopark'];
         $this->zones($project, $zones);
 
-        $team = collect([$this->staff['internal'][1], $this->staff['freelance'][1]])
-            ->merge($this->activeStaff('bogazici', 2))
-            ->merge($this->activeStaff('yildiz', 2));
+        $team = $this->pickTeam([$date], ['internal' => 2, 'freelance' => 2, 'bogazici' => 2]);
 
-        $day = ProjectDay::create([
-            'project_id' => $project->id,
-            'date' => $date,
-            'supervisor_id' => $this->saha->id,
-            'status' => 'completed',
-            'start_photo' => self::PHOTO_PATH,
-            'end_photo' => self::PHOTO_PATH,
-            'notes' => 'Sorunsuz tamamlandı. Müşteri hostes ekibinden memnun kaldı.',
+        $day = $this->newDay($project, $date, $this->saha, 'completed', [
+            'notes' => 'Basın girişi 09:30, toplantı 11:00-13:00. Sorunsuz tamamlandı.',
         ]);
 
-        $assignments = [];
-        foreach ($team as $i => $personnel) {
-            $wage = (float) $personnel->default_wage;
-            $assignments[] = ProjectDayPersonnel::create([
-                'project_day_id' => $day->id,
-                'personnel_id' => $personnel->id,
-                'daily_wage' => $wage,
-                'overtime_hours' => 0,
-                'overtime_rate' => 0,
-                'total_earnings' => $wage,
-                'zone' => $zones[$i % count($zones)],
-                'check_in_time' => $date->copy()->setTime(7, 30)->addMinutes(mt_rand(0, 30)),
-                'check_in_photo' => self::PHOTO_PATH,
-                'check_out_time' => $date->copy()->setTime(18, 0)->addMinutes(mt_rand(0, 40)),
-                'check_out_photo' => self::PHOTO_PATH,
-                'payment_status' => $i === 1 ? 'paid' : 'pending',
-                'payment_method' => $i === 1 ? 'cash' : null,
-                'payment_amount' => $i === 1 ? $wage : 0,
-                'is_checked' => true,
-            ]);
-        }
+        $assignments = $this->completedAssignments($day, $team, $zones, [8, 30], [14, 30], fn (int $i) => $i < 2 ? 'paid' : 'pending');
 
-        $this->assignInventory($day, $this->inventory['kapidedektor'][2], null, $date);
-        foreach ($this->inventory['eldedektor']->slice(4, 1) as $item) {
-            $this->assignInventory($day, $item, $assignments[0], $date);
+        foreach ($this->inventory['eldedektor']->slice(0, 2)->values() as $i => $item) {
+            $this->assignInventory($day, $item, $assignments[$i], $date);
         }
-        foreach ($this->inventory['telsiz']->slice(8, 3)->values() as $i => $item) {
+        foreach ($this->inventory['telsiz']->slice(4, 3)->values() as $i => $item) {
             $this->assignInventory($day, $item, $assignments[$i], $date);
         }
 
-        $this->expense($day, 'Ekip ulaşımı (Ümraniye)', 900, 'transport')->approve($this->mudur->id);
+        $this->expense($day, 'Ekip öğle yemeği (6 kişi)', 780, 'food')->approve($this->mudur->id);
+        $this->expense($day, 'Taksi (ekipman transferi)', 420, 'transport');
 
-        $this->touch('project_days', $day->id, $date->copy()->setTime(7, 0), $date->copy()->setTime(19, 0));
-        $project->update(['status' => 'completed', 'estimated_cost' => $this->estimateCost($project)]);
-        $this->touch('projects', $project->id, $date->copy()->subDays(12), $date->copy()->addDay()->setTime(9, 30));
-
-        $this->accounting->finalizeProject($project->fresh(), $this->mudur->id);
-        $this->customerPayment($project, 45000, 'garanti', $date->copy()->addDays(8), 'TAH-2026-0006', 'Bayi toplantısı - tam ödeme');
+        $this->touch('project_days', $day->id, $date->copy()->setTime(8, 0), $date->copy()->setTime(15, 0));
+        $this->priceProject($project, 'completed');
+        $this->touch('projects', $project->id, $date->copy()->subDays(8), $date->copy()->setTime(15, 10));
     }
 
-    /** 3) Bugün: canlı QR check-in demosu için aktif proje */
+    /** 4) Bugün ve yarın: canlı QR check-in / canlı izleme demosu için aktif proje */
     private function createTv100Project(): void
     {
-        $date = $this->today->copy();
+        $start = $this->d(0);
+        $end = $this->d(1);
+        $dates = $this->range($start, 2);
 
-        $project = Project::create([
-            'customer_id' => $this->customers['tv100']->id,
+        $project = $this->newProject('tv100', 'TV100 Canlı Yayın Güvenliği', $start, $end, 'active', [
             'account_id' => $this->accounts['kasa']->id,
-            'offer_number' => 'TKL-2026-0003',
-            'name' => 'TV100 Yılbaşı Özel Yayını',
-            'start_date' => $date,
-            'end_date' => $date,
-            'status' => 'active',
-            'requires_approval' => true,
-            'approved_at' => $date->copy()->subDays(6)->setTime(10, 45),
+            'approved_at' => $start->copy()->subDays(6)->setTime(10, 45),
             'approved_by' => $this->admin->id,
-            'offer_price' => 60000,
             'delivery_type' => 'express',
-            'notes' => 'Maslak stüdyo, canlı yayın. Konuk girişi 19:00, yayın 21:00-01:00. Stüdyo girişinde turnike, otoparkta mojo bariyer.',
-        ]);
+            'notes' => 'Kağıthane stüdyo, 2 gün canlı yayın. Konuk girişi 19:00, yayın 21:00-01:00. Stüdyo girişinde turnike, otoparkta mojo bariyer.',
+        ], ['TV100 Stüdyoları, Kağıthane / İstanbul', 41.0868, 28.9737]);
 
         $zones = ['Stüdyo Girişi', 'Kulis', 'Konuk Alanı', 'Reji', 'Otopark'];
         $this->zones($project, $zones);
 
-        $day = ProjectDay::create([
+        $team = $this->pickTeam($dates, ['internal' => 4, 'kaplan' => 6, 'freelance' => 2]);
+        $telsizler = $this->inventory['telsiz']->where('current_status', 'available')->take(6)->values();
+
+        foreach ($dates as $d => $date) {
+            $day = $this->newDay($project, $date, $this->saha, 'pending', [
+                'notes' => $d === 0 ? 'Ekip toplanma: 17:30 stüdyo önü.' : '2. gün; aynı ekip, konuk listesi rejiden alınacak.',
+            ]);
+
+            $assignments = $this->plannedAssignments($day, $team, $zones);
+
+            foreach ($telsizler as $i => $item) {
+                $this->assignInventory($day, $item, $assignments[$i], $date, 'pending');
+            }
+            $this->rentals($day, $date, ['mojo' => 6, 'turnike' => 2]);
+        }
+
+        $this->priceProject($project);
+        $this->touch('projects', $project->id, $start->copy()->subDays(9), $start->copy()->subDays(6)->setTime(10, 45));
+    }
+
+    /** 5) Onaylı, 4 günlük belediye festivali (kiralık bariyer, tuvalet, jeneratör) */
+    private function createSisliProject(): void
+    {
+        $start = $this->d(2);
+        $end = $this->d(5);
+        $dates = $this->range($start, 4);
+
+        $project = $this->newProject('sisli', 'Şişli Belediyesi Sonbahar Festivali', $start, $end, 'approved', [
+            'account_id' => $this->accounts['garanti']->id,
+            'approved_at' => $this->d(-1)->setTime(14, 10),
+            'approved_by' => $this->admin->id,
+            'delivery_type' => 'scheduled',
+            'notes' => 'Şişli Meydanı açık hava festivali, 4 gün. Belediye zabıtası ile koordineli çalışılacak. Mobil tuvalet ve jeneratör kiralaması dahil.',
+        ], ['Şişli Belediyesi Meydanı, Şişli / İstanbul', 41.0602, 28.9877]);
+
+        $zones = ['Ana Giriş', 'Sahne Önü', 'Sahne Arkası', 'Yemek Alanı', 'Otopark'];
+        $this->zones($project, $zones);
+
+        $team = $this->pickTeam($dates, ['internal' => 5, 'freelance' => 8, 'bogazici' => 2]);
+
+        foreach ($dates as $date) {
+            $day = $this->newDay($project, $date, $this->mudur);
+            $this->plannedAssignments($day, $team, $zones);
+            $this->rentals($day, $date, ['polis' => 9, 'tuvalet' => 4, 'jenerator' => 1, 'mojo' => 8]);
+        }
+
+        $this->priceProject($project);
+        $this->touch('projects', $project->id, $this->d(-12), $this->d(-1)->setTime(14, 10));
+    }
+
+    /** 6) Onaylı teknoloji fuarı; ağırlıklı Kaplan ekibi, x-ray + kapı dedektörü + turnike */
+    private function createFuarProject(): void
+    {
+        $start = $this->d(3);
+        $end = $this->d(6);
+        $dates = $this->range($start, 4);
+
+        $project = $this->newProject('fuar', 'İstanbul Fuar Merkezi – Teknoloji Fuarı', $start, $end, 'approved', [
+            'account_id' => $this->accounts['garanti']->id,
+            'approved_at' => $this->d(-3)->setTime(16, 20),
+            'approved_by' => $this->mudur->id,
+            'delivery_type' => 'scheduled',
+            'notes' => 'Yeşilköy fuar alanı, 4 gün. 2 ana giriş: x-ray + kapı dedektörü; ziyaretçi sayımı için turnike. Son gün (kapanış) 20 kişi. Kaplan ekibi ağırlıklı kadro.',
+        ], ['İstanbul Fuar Merkezi, Yeşilköy / İstanbul', 40.9780, 28.8210]);
+
+        $zones = ['Ana Giriş A', 'Ana Giriş B', 'Fuaye', 'Salon 3', 'Yükleme Rampası', 'Otopark'];
+        $this->zones($project, $zones);
+
+        // İlk 3 gün Şişli ile çakışır; havuzda kalan tüm aktif personel (16) burada. Son gün +4 freelance.
+        $team = $this->pickTeam($dates, ['kaplan' => 11, 'internal' => 2, 'freelance' => 1, 'yildiz' => 2]);
+        $closingExtra = $this->pickTeam([$end], ['freelance' => 4]);
+
+        foreach ($dates as $d => $date) {
+            $day = $this->newDay($project, $date, $this->saha, 'pending', [
+                'notes' => $d === 3 ? 'Kapanış günü; stand sökümü için yükleme rampasına ek görevli.' : null,
+            ]);
+            $this->plannedAssignments($day, $d === 3 ? $team->merge($closingExtra) : $team, $zones);
+            $this->rentals($day, $date, ['xray' => 1, 'kapidedektor' => 3, 'turnike' => 2]);
+        }
+
+        $this->priceProject($project);
+        $this->touch('projects', $project->id, $this->d(-15), $this->d(-3)->setTime(16, 20));
+    }
+
+    /** 7) İptal edilmiş konser (iptal durumunu göstermek için); atamalar kaldırıldı */
+    private function createKocaeliProject(): void
+    {
+        $date = $this->d(4);
+
+        $project = $this->newProject('kocaeli', 'Kocaeli Büyükşehir Konseri', $date, $date, 'cancelled', [
+            'approved_at' => $this->d(-6)->setTime(11, 0),
+            'approved_by' => $this->mudur->id,
+            'notes' => 'Belediye konseri ileri bir tarihe erteledi; proje iptal edildi, personel atamaları kaldırıldı. Yeni tarih bildirilince teklif yenilenecek.',
+        ], ['Kocaeli Kongre Merkezi, İzmit / Kocaeli', 40.7650, 29.9400]);
+
+        $this->zones($project, ['Ana Giriş', 'Sahne Önü', 'Otopark']);
+        $this->newDay($project, $date, $this->saha, 'pending', ['notes' => 'İPTAL – müşteri talebiyle.']);
+
+        // Teklif, planlanan 12 kişi + 8 polis bariyeri üzerinden hesaplanmıştı (atama yapılmadan)
+        $planned = $this->staff['kaplan']->where('is_active', true)->take(12);
+        $cost = (float) $planned->sum('default_wage') + 8 * (float) $this->inventory['polis'][0]->daily_rate;
+        $project->update(['estimated_cost' => round($cost, 2), 'offer_price' => $this->offerPrice($cost)]);
+        $this->touch('projects', $project->id, $this->d(-10), $this->d(-2)->setTime(9, 15));
+    }
+
+    /** 8) Onaylı fabrika açılışı, 2 gün */
+    private function createSiemensProject(): void
+    {
+        $start = $this->d(7);
+        $end = $this->d(8);
+        $dates = $this->range($start, 2);
+
+        $project = $this->newProject('siemens', 'Siemens Fabrika Açılışı', $start, $end, 'approved', [
+            'account_id' => $this->accounts['garanti']->id,
+            'approved_at' => $this->d(-2)->setTime(13, 30),
+            'approved_by' => $this->admin->id,
+            'notes' => 'Gebze fabrika açılış töreni; 1. gün protokol, 2. gün basın ve çalışan aileleri. X-ray ile giriş kontrolü talep edildi. İngilizce raporlama.',
+        ], ['Siemens Gebze Tesisleri, Gebze / Kocaeli', 40.8020, 29.4330]);
+
+        $zones = ['Protokol Girişi', 'Ana Giriş', 'Üretim Alanı', 'Otopark'];
+        $this->zones($project, $zones);
+
+        $team = $this->pickTeam($dates, ['internal' => 2, 'kaplan' => 4, 'bogazici' => 2, 'freelance' => 2]);
+
+        foreach ($dates as $date) {
+            $day = $this->newDay($project, $date, $this->saha);
+            $this->plannedAssignments($day, $team, $zones);
+            $this->rentals($day, $date, ['xray' => 1, 'kapidedektor' => 2]);
+        }
+
+        $this->priceProject($project);
+        $this->touch('projects', $project->id, $this->d(-8), $this->d(-2)->setTime(13, 30));
+    }
+
+    /** 9) Takvim dolgusu: AVM hafta sonu takviyesi (tek gün, 6 kişi) */
+    private function createAvmProject(): void
+    {
+        $date = $this->d(8);
+
+        $project = $this->newProject('avm', 'AVM Hafta Sonu Takviye', $date, $date, 'approved', [
+            'account_id' => $this->accounts['kasa']->id,
+            'approved_at' => $this->d(-1)->setTime(17, 5),
+            'approved_by' => $this->mudur->id,
+            'notes' => 'AVM kendi kadrosuna hafta sonu takviyesi: 4 giriş + 2 otopark. El dedektörü ile giriş kontrolü.',
+        ], ['Marmara Forum AVM, Bakırköy / İstanbul', 40.9920, 28.8800]);
+
+        $zones = ['Ana Giriş', 'Otopark'];
+        $this->zones($project, $zones);
+
+        $team = $this->pickTeam([$date], ['freelance' => 4, 'kaplan' => 2]);
+        $day = $this->newDay($project, $date, $this->mudur);
+        $assignments = $this->plannedAssignments($day, $team, $zones);
+        foreach ($this->inventory['eldedektor']->slice(0, 2)->values() as $i => $item) {
+            $this->assignInventory($day, $item, $assignments[$i], $date, 'pending');
+        }
+
+        $this->priceProject($project);
+        $this->touch('projects', $project->id, $this->d(-3), $this->d(-1)->setTime(17, 5));
+    }
+
+    /** 10) Teklif gönderilmiş, onay bekleyen 3 günlük kongre; kadro kısmen atanmış */
+    private function createRumeliProject(): void
+    {
+        $start = $this->d(9);
+        $end = $this->d(11);
+        $dates = $this->range($start, 3);
+
+        $project = $this->newProject('rumeli', 'Rumeli Hastanesi Kongre', $start, $end, 'pending', [
+            'notes' => 'Tıp kongresi, 3 gün, tahmini 600 katılımcı. Teklif 8 kişi/gün üzerinden iletildi; müşteri onayı bekleniyor, kadro kısmen planlandı.',
+        ], ['Özel Rumeli Hastanesi Kongre Salonu, Bağcılar / İstanbul', 41.0176, 28.7716]);
+
+        $zones = ['Kongre Salonu Girişi', 'Fuaye', 'Kayıt Masası', 'Otopark'];
+        $this->zones($project, $zones);
+
+        $team = $this->pickTeam($dates, ['internal' => 3, 'freelance' => 3, 'yildiz' => 2]);
+
+        foreach ($dates as $d => $date) {
+            $day = $this->newDay($project, $date, $this->mudur);
+            $this->plannedAssignments($day, $team->take([8, 6, 4][$d]), $zones);
+            $this->rentals($day, $date, ['kapidedektor' => 1]);
+        }
+
+        $this->priceProject($project);
+        $this->touch('projects', $project->id, $this->d(-4), $this->d(-1)->setTime(11, 50));
+    }
+
+    /** 11) Takvim dolgusu: banka şube açılışı (tek gün, 5 kişi) */
+    private function createBankaProject(): void
+    {
+        $date = $this->d(10);
+
+        $project = $this->newProject('banka', 'Banka Şube Açılışı – Kadıköy', $date, $date, 'approved', [
+            'account_id' => $this->accounts['kasa']->id,
+            'approved_at' => $this->d(-2)->setTime(10, 15),
+            'approved_by' => $this->admin->id,
+            'notes' => 'Şube açılış kokteyli; genel müdürlük protokolü katılacak. 3 giriş, 2 kokteyl alanı.',
+        ], ['Bağdat Caddesi, Kadıköy / İstanbul', 40.9905, 29.0270]);
+
+        $zones = ['Şube Girişi', 'Kokteyl Alanı'];
+        $this->zones($project, $zones);
+
+        $team = $this->pickTeam([$date], ['kaplan' => 3, 'internal' => 2]);
+        $day = $this->newDay($project, $date, $this->saha);
+        $this->plannedAssignments($day, $team, $zones);
+
+        $this->priceProject($project);
+        $this->touch('projects', $project->id, $this->d(-5), $this->d(-2)->setTime(10, 15));
+    }
+
+    /** 12) Onaylı mezuniyet töreni, 2 gün, 25 kişi (karma ekip), sahne bariyerleri */
+    private function createBogaziciProject(): void
+    {
+        $start = $this->d(12);
+        $end = $this->d(13);
+        $dates = $this->range($start, 2);
+
+        $project = $this->newProject('bogazici_uni', 'Boğaziçi Üniversitesi Mezuniyet Töreni', $start, $end, 'approved', [
+            'account_id' => $this->accounts['garanti']->id,
+            'approved_at' => $this->d(-1)->setTime(9, 30),
+            'approved_by' => $this->admin->id,
+            'delivery_type' => 'scheduled',
+            'notes' => 'Güney Kampüs çim alan; 1. gün prova ve kurulum, 2. gün tören (yaklaşık 6.000 kişi). Sahne önü mojo + polis bariyeri. Karma ekip: kadrolu + Kaplan + freelance + hostes.',
+        ], ['Boğaziçi Üniversitesi Güney Kampüs, Bebek / İstanbul', 41.0846, 29.0510]);
+
+        $zones = ['Ana Kapı', 'Sahne Önü', 'Protokol Tribünü', 'Aile Alanı', 'Otopark', 'Kulis'];
+        $this->zones($project, $zones);
+
+        $team = $this->pickTeam($dates, ['internal' => 6, 'kaplan' => 10, 'freelance' => 7, 'yildiz' => 2]);
+
+        foreach ($dates as $date) {
+            $day = $this->newDay($project, $date, $this->saha);
+            $this->plannedAssignments($day, $team, $zones);
+            $this->rentals($day, $date, ['mojo' => 8, 'polis' => 9]);
+        }
+
+        $this->priceProject($project);
+        $this->touch('projects', $project->id, $this->d(-7), $this->d(-1)->setTime(9, 30));
+    }
+
+    /** 13) Taslak: VIP kişi koruma, tek gün, henüz atama yok */
+    private function createVipProject(): void
+    {
+        $date = $this->d(6);
+
+        $project = $this->newProject('vip', 'Ünlü Sanatçı Kişi Koruma (VIP)', $date, $date, 'draft', [
+            'estimated_cost' => 0,
+            'offer_price' => 0,
+            'notes' => '4 yakın koruma (bodyguard) talep edildi: otel çıkışı, transfer, sahne arkası ve otel dönüşü. Keşif yapılacak; personel ataması ve teklif henüz hazırlanmadı.',
+        ], ['Çırağan Sarayı, Beşiktaş / İstanbul', 41.0437, 29.0177]);
+
+        $this->zones($project, ['Otel Lobisi', 'Araç Konvoyu', 'Sahne Arkası']);
+        $this->newDay($project, $date, $this->mudur, 'pending', ['notes' => 'Taslak – kadro belirlenecek.']);
+        $this->touch('projects', $project->id, $this->d(-1)->setTime(16, 40), $this->d(-1)->setTime(16, 40));
+    }
+
+    // ---------------------------------------------------------------
+    // Proje yardımcıları
+    // ---------------------------------------------------------------
+
+    /** Bugüne göre gün (D+n) */
+    private function d(int $offset): Carbon
+    {
+        return $this->today->copy()->addDays($offset);
+    }
+
+    /** @return Carbon[] */
+    private function range(Carbon $start, int $count): array
+    {
+        return array_map(fn (int $i) => $start->copy()->addDays($i), range(0, $count - 1));
+    }
+
+    /** Teklif numarası: TKL-YYYY-00xx (oluşturulma sırasıyla) */
+    private function offerNumber(): string
+    {
+        return sprintf('TKL-%s-%04d', $this->today->format('Y'), ++$this->offerSeq);
+    }
+
+    /** @param array{0:string,1:float,2:float} $venue [adres, lat, lng] */
+    private function newProject(string $customerKey, string $name, Carbon $start, Carbon $end, string $status, array $extra, array $venue): Project
+    {
+        return Project::create($extra + [
+            'customer_id' => $this->customers[$customerKey]->id,
+            'offer_number' => $this->offerNumber(),
+            'name' => $name,
+            'start_date' => $start,
+            'end_date' => $end,
+            'status' => $status,
+            'requires_approval' => true,
+            'delivery_type' => 'standard',
+            'venue_address' => $venue[0],
+            'venue_lat' => $venue[1],
+            'venue_lng' => $venue[2],
+        ]);
+    }
+
+    /** Gün kaydı; sorumlu ve mekân koordinatları projeden devralınır */
+    private function newDay(Project $project, Carbon $date, User $supervisor, string $status = 'pending', array $extra = []): ProjectDay
+    {
+        return ProjectDay::create($extra + [
             'project_id' => $project->id,
             'date' => $date,
-            'supervisor_id' => $this->saha->id,
-            'status' => 'pending',
-            'start_photo' => null,
-            'end_photo' => null,
-            'notes' => 'Ekip toplanma: 17:30 stüdyo önü.',
+            'supervisor_id' => $supervisor->id,
+            'status' => $status,
+            'start_photo' => $status === 'completed' ? self::PHOTO_PATH : null,
+            'end_photo' => $status === 'completed' ? self::PHOTO_PATH : null,
+            'venue_lat' => $project->venue_lat,
+            'venue_lng' => $project->venue_lng,
         ]);
+    }
 
-        $team = $this->activeStaff('internal', 4)
-            ->merge($this->activeStaff('kaplan', 6))
-            ->merge($this->activeStaff('freelance', 2));
-
+    /** Planlanmış (henüz giriş yapılmamış) atamalar */
+    private function plannedAssignments(ProjectDay $day, Collection $team, array $zones): array
+    {
         $assignments = [];
-        foreach ($team as $i => $personnel) {
+        foreach ($team->values() as $i => $personnel) {
             $assignments[] = ProjectDayPersonnel::create([
                 'project_day_id' => $day->id,
                 'personnel_id' => $personnel->id,
                 'daily_wage' => $personnel->default_wage,
                 'zone' => $zones[$i % count($zones)],
+                'presence' => 'assigned',
                 'payment_status' => 'pending',
                 'is_checked' => false,
             ]);
         }
-        $project->update(['estimated_cost' => 0]); // aşağıda hesaplanır
 
-        $telsizler = $this->inventory['telsiz']->where('current_status', 'available')->take(6)->values();
-        foreach ($telsizler as $i => $item) {
-            $this->assignInventory($day, $item, $assignments[$i], $date, 'pending');
-        }
-        foreach ($this->inventory['mojo']->slice(0, 6) as $item) {
-            $this->assignInventory($day, $item, null, $date, 'pending');
-        }
-        foreach ($this->inventory['turnike'] as $item) {
-            $this->assignInventory($day, $item, null, $date, 'pending');
-        }
-
-        $project->update(['estimated_cost' => $this->estimateCost($project)]);
+        return $assignments;
     }
 
-    /** 4) Onaylanmış, 5 gün sonra başlayacak 4 günlük etkinlik */
-    private function createSisliProject(): void
+    /**
+     * Tamamlanmış gün atamaları: giriş/çıkış saatleri, mesai ve saha ödemesi.
+     *
+     * @param array{0:int,1:int} $in   giriş saati [saat, dakika]
+     * @param array{0:int,1:int} $out  çıkış saati [saat, dakika] (24+ ise ertesi gün)
+     * @param callable(int): string $paymentFor  sıra => paid|partial|pending
+     * @param callable(int): float|null $overtimeFor sıra => mesai saati
+     */
+    private function completedAssignments(ProjectDay $day, Collection $team, array $zones, array $in, array $out, callable $paymentFor, ?callable $overtimeFor = null): array
     {
-        $start = $this->today->copy()->addDays(5);
-        $end = $start->copy()->addDays(3);
+        $date = $day->date;
+        $assignments = [];
 
-        $project = Project::create([
-            'customer_id' => $this->customers['sisli']->id,
-            'account_id' => $this->accounts['garanti']->id,
-            'offer_number' => 'TKL-2026-0004',
-            'name' => 'Şişli Belediyesi Ramazan Etkinliği',
-            'start_date' => $start,
-            'end_date' => $end,
-            'status' => 'approved',
-            'requires_approval' => true,
-            'approved_at' => $this->today->copy()->subDay()->setTime(14, 10),
-            'approved_by' => $this->admin->id,
-            'offer_price' => 180000,
-            'delivery_type' => 'scheduled',
-            'notes' => 'Şişli Meydanı açık hava etkinliği, 4 gün. Belediye zabıtası ile koordineli çalışılacak. Mobil tuvalet ve jeneratör kiralaması dahil.',
-        ]);
+        foreach ($team->values() as $i => $personnel) {
+            $wage = (float) $personnel->default_wage;
+            $overtimeHours = $overtimeFor ? (float) $overtimeFor($i) : 0.0;
+            $overtimeRate = $overtimeHours > 0 ? round($wage / 8 * 1.5, 2) : 0.0;
+            $total = $wage + $overtimeHours * $overtimeRate;
 
-        $zones = ['Ana Giriş', 'Sahne Önü', 'Sahne Arkası', 'Yemek Alanı', 'Otopark'];
-        $this->zones($project, $zones);
+            [$status, $method, $amount] = match ($paymentFor($i)) {
+                'paid' => ['paid', 'cash', $total],
+                'partial' => ['partial', 'cash', 1000.0],
+                default => ['pending', null, 0.0],
+            };
 
-        $team = $this->activeStaff('internal', 3, 3)
-            ->merge($this->activeStaff('kaplan', 5, 3))
-            ->merge($this->activeStaff('freelance', 2, 2));
-
-        for ($d = 0; $d < 4; $d++) {
-            $date = $start->copy()->addDays($d);
-            $day = ProjectDay::create([
-                'project_id' => $project->id,
-                'date' => $date,
-                'supervisor_id' => $this->saha->id,
-                'status' => 'pending',
+            $assignments[] = ProjectDayPersonnel::create([
+                'project_day_id' => $day->id,
+                'personnel_id' => $personnel->id,
+                'daily_wage' => $wage,
+                'overtime_hours' => $overtimeHours,
+                'overtime_rate' => $overtimeRate,
+                'total_earnings' => $total,
+                'zone' => $zones[$i % count($zones)],
+                'presence' => 'checked_out',
+                'check_in_time' => $date->copy()->setTime($in[0], $in[1])->addMinutes(mt_rand(0, 40)),
+                'check_in_photo' => self::PHOTO_PATH,
+                'check_out_time' => $date->copy()->setTime(0, 0)->addHours($out[0])->addMinutes($out[1] + mt_rand(0, 45) + (int) ($overtimeHours * 60)),
+                'check_out_photo' => self::PHOTO_PATH,
+                'payment_status' => $status,
+                'payment_method' => $method,
+                'payment_amount' => $amount,
+                'is_checked' => true,
+                'notes' => $overtimeHours > 0 ? 'Ekipman toplama için mesaiye kaldı.' : null,
             ]);
-
-            foreach ($team as $i => $personnel) {
-                ProjectDayPersonnel::create([
-                    'project_day_id' => $day->id,
-                    'personnel_id' => $personnel->id,
-                    'daily_wage' => $personnel->default_wage,
-                    'zone' => $zones[$i % count($zones)],
-                    'payment_status' => 'pending',
-                    'is_checked' => false,
-                ]);
-            }
-
-            foreach ($this->inventory['polis']->slice(0, 9) as $item) {
-                $this->assignInventory($day, $item, null, $date, 'pending');
-            }
-            foreach ($this->inventory['tuvalet'] as $item) {
-                $this->assignInventory($day, $item, null, $date, 'pending');
-            }
-            $this->assignInventory($day, $this->inventory['jenerator'][0], null, $date, 'pending');
-            foreach ($this->inventory['mojo'] as $item) {
-                $this->assignInventory($day, $item, null, $date, 'pending');
-            }
         }
 
-        $project->update(['estimated_cost' => $this->estimateCost($project)]);
+        return $assignments;
     }
 
-    /** 5) Teklif gönderilmiş, onay bekleyen proje */
-    private function createSiemensProject(): void
+    /** Kiralık envanter: anahtar => adet (ilk N kullanılabilir kalem) */
+    private function rentals(ProjectDay $day, Carbon $date, array $items, string $outcome = 'pending'): void
     {
-        $start = $this->today->copy()->addMonth()->setDay(14);
-        $end = $start->copy()->addDay();
-
-        $project = Project::create([
-            'customer_id' => $this->customers['siemens']->id,
-            'offer_number' => 'TKL-2026-0005',
-            'name' => 'Siemens Fabrika Açılışı',
-            'start_date' => $start,
-            'end_date' => $end,
-            'status' => 'pending',
-            'requires_approval' => true,
-            'offer_price' => 95000,
-            'delivery_type' => 'standard',
-            'notes' => 'Gebze fabrika açılış töreni; 1. gün protokol, 2. gün basın ve çalışan aileleri. X-ray ile giriş kontrolü talep edildi. Teklif 03.09.2026 tarihinde iletildi.',
-        ]);
-
-        $zones = ['Protokol Girişi', 'Ana Giriş', 'Üretim Alanı', 'Otopark'];
-        $this->zones($project, $zones);
-
-        $day1Team = $this->activeStaff('internal', 2, 1)
-            ->merge($this->activeStaff('kaplan', 4, 1))
-            ->merge($this->activeStaff('bogazici', 2));
-        $day2Team = $day1Team->take(4);
-
-        foreach ([$day1Team, $day2Team] as $d => $team) {
-            $date = $start->copy()->addDays($d);
-            $day = ProjectDay::create([
-                'project_id' => $project->id,
-                'date' => $date,
-                'supervisor_id' => null,
-                'status' => 'pending',
-            ]);
-
-            foreach ($team as $i => $personnel) {
-                ProjectDayPersonnel::create([
-                    'project_day_id' => $day->id,
-                    'personnel_id' => $personnel->id,
-                    'daily_wage' => $personnel->default_wage,
-                    'zone' => $zones[$i % count($zones)],
-                    'payment_status' => 'pending',
-                    'is_checked' => false,
-                ]);
-            }
-
-            $this->assignInventory($day, $this->inventory['xray'][0], null, $date, 'pending');
-            foreach ($this->inventory['kapidedektor']->slice(0, 2) as $item) {
-                $this->assignInventory($day, $item, null, $date, 'pending');
+        foreach ($items as $key => $count) {
+            foreach ($this->inventory[$key]->take($count) as $item) {
+                $this->assignInventory($day, $item, null, $date, $outcome);
             }
         }
-
-        $project->update(['estimated_cost' => $this->estimateCost($project)]);
     }
 
-    /** 6) Taslak proje, gün planı yok */
-    private function createRumeliProject(): void
+    /** Teklif fiyatı ≈ maliyet × 1,35, yukarı 1.000 TL'ye yuvarlanır */
+    private function offerPrice(float $cost): float
     {
-        $start = $this->today->copy()->addMonths(2)->setDay(5);
+        return $cost > 0 ? ceil($cost * 1.35 / 1000) * 1000 : 0.0;
+    }
 
-        $project = Project::create([
-            'customer_id' => $this->customers['rumeli']->id,
-            'offer_number' => 'TKL-2026-0006',
-            'name' => 'Rumeli Hastanesi Kongre',
-            'start_date' => $start,
-            'end_date' => $start->copy()->addDays(2),
-            'status' => 'draft',
-            'requires_approval' => true,
-            'offer_price' => 0,
-            'estimated_cost' => 0,
-            'notes' => 'Tıp kongresi, 3 gün, tahmini 600 katılımcı. Keşif ziyareti planlanacak; personel sayısı netleşmedi.',
-        ]);
-
-        $this->zones($project, ['Kongre Salonu Girişi', 'Fuaye', 'Otopark']);
+    /** Tahmini maliyet + teklif fiyatını günlerden hesaplayıp yazar; istenirse durumu günceller */
+    private function priceProject(Project $project, ?string $status = null): void
+    {
+        $cost = $this->estimateCost($project);
+        $project->update(array_filter([
+            'estimated_cost' => $cost,
+            'offer_price' => $this->offerPrice($cost),
+            'status' => $status,
+        ], fn ($v) => $v !== null));
     }
 
     // ---------------------------------------------------------------
@@ -1061,16 +1315,61 @@ class DemoDataSeeder extends Seeder
     // Yardımcılar
     // ---------------------------------------------------------------
 
-    /** Belirtilen havuzdan aktif personel (offset ile farklı projelere farklı kişiler) */
-    private function activeStaff(string $key, int $count, int $offset = 0): Collection
+    /**
+     * Verilen tarihlerin TÜMÜNDE boş olan aktif personelden ekip kurar ve onları o tarihlere rezerve eder
+     * (aynı gün iki projeye atama yapılmaz). Havuzlar döngüsel imleçle gezilir (rotasyon); bir havuzda
+     * yeterli kişi yoksa eksik, diğer havuzlardaki boş personelden tamamlanır.
+     *
+     * @param Carbon[] $dates
+     * @param array<string, int> $wants  havuz (internal|freelance|kaplan|yildiz|bogazici) => kişi sayısı
+     * @return Collection<int, Personnel>
+     */
+    private function pickTeam(array $dates, array $wants): Collection
     {
-        $active = $this->staff[$key]->where('is_active', true)->values();
+        $keys = array_map(fn (Carbon $d) => $d->toDateString(), $dates);
+        $team = collect();
 
-        if ($active->count() < $offset + $count) {
-            $offset = max(0, $active->count() - $count);
+        $isFree = function (Personnel $p) use ($keys, &$team): bool {
+            if ($team->contains('id', $p->id)) {
+                return false;
+            }
+            foreach ($keys as $k) {
+                if (isset($this->booked[$k][$p->id])) {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        $missing = 0;
+        foreach ($wants as $pool => $count) {
+            $active = $this->staff[$pool]->where('is_active', true)->values();
+            $n = $active->count();
+            $start = $n > 0 ? ($this->cursor[$pool] ?? 0) % $n : 0;
+            $rotated = $active->slice($start)->merge($active->slice(0, $start));
+            $picked = $rotated->filter($isFree)->take($count)->values();
+            $team = $team->merge($picked);
+            $this->cursor[$pool] = $start + $picked->count();
+            $missing += $count - $picked->count();
         }
 
-        return $active->slice($offset, $count)->values();
+        if ($missing > 0) {
+            $rest = collect($this->staff)->flatMap(fn (Collection $c) => $c)->where('is_active', true)->filter($isFree)->take($missing);
+            $team = $team->merge($rest);
+        }
+
+        if ($team->count() < array_sum($wants)) {
+            throw new \RuntimeException(sprintf('Yeterli boş personel yok: %s için %d istendi, %d bulundu.', implode(',', $keys), array_sum($wants), $team->count()));
+        }
+
+        foreach ($keys as $k) {
+            foreach ($team as $p) {
+                $this->booked[$k][$p->id] = true;
+            }
+        }
+
+        return $team->values();
     }
 
     private function zones(Project $project, array $names): void
@@ -1319,7 +1618,7 @@ class DemoDataSeeder extends Seeder
     {
         $personnelRole = \App\Models\Role::where('name', 'personnel')->first();
 
-        // TV100 (bugünkü aktif gün) – Kağıthane stüdyo civarı
+        // TV100 (bugünkü aktif gün) – Kağıthane stüdyo civarı; ilk günün 6 görevlisi için örnek konumlar
         $tv100 = \App\Models\Project::where('name', 'like', 'TV100%')->first();
         if ($tv100) {
             $tv100->update(['venue_address' => 'TV100 Stüdyoları, Kağıthane / İstanbul', 'venue_lat' => 41.0868, 'venue_lng' => 28.9737]);
@@ -1339,29 +1638,25 @@ class DemoDataSeeder extends Seeder
                 }
 
                 // İlk personel için mobil "personel modu" hesabı
+                // Kullanıcı hesabı sıfırlamada korunur; yeniden seed'de yeni ilk personele bağlanır ve adı güncellenir.
                 $first = $assignments->first()?->personnel;
                 if ($first && !$first->user_id) {
                     $user = \App\Models\User::firstOrCreate(
                         ['email' => 'personel@esasgroup.com.tr'],
                         ['name' => $first->full_name, 'password' => bcrypt('EsasPersonel2026!'), 'is_active' => true]
                     );
+                    if ($user->name !== $first->full_name || !$user->is_active) {
+                        $user->forceFill(['name' => $first->full_name, 'is_active' => true])->save();
+                    }
                     if ($personnelRole && !$user->roles()->where('roles.id', $personnelRole->id)->exists()) {
                         $user->assignRole($personnelRole);
                     }
+                    \App\Models\Personnel::where('user_id', $user->id)->whereKeyNot($first->id)->update(['user_id' => null]);
                     $first->forceFill(['user_id' => $user->id, 'email' => 'personel@esasgroup.com.tr'])->save();
                 }
             }
         }
 
-        $venues = [
-            'Zorlu PSM' => ['Zorlu Center, Beşiktaş / İstanbul', 41.0667, 29.0170],
-            'Coca-Cola' => ['Coca-Cola İçecek Genel Merkezi, Ümraniye / İstanbul', 41.0206, 29.1230],
-            'Şişli' => ['Şişli Belediyesi Meydanı, Şişli / İstanbul', 41.0602, 28.9877],
-            'Siemens' => ['Siemens Gebze Tesisleri, Kocaeli', 40.8020, 29.4330],
-            'Rumeli' => ['Özel Rumeli Hastanesi, Küçükçekmece / İstanbul', 41.0176, 28.7716],
-        ];
-        foreach ($venues as $needle => [$address, $lat, $lng]) {
-            \App\Models\Project::where('name', 'like', "%{$needle}%")->update(['venue_address' => $address, 'venue_lat' => $lat, 'venue_lng' => $lng]);
-        }
+        // Mekân adres/koordinatları newProject() içinde her proje ve gün için doğrudan yazılır.
     }
 }

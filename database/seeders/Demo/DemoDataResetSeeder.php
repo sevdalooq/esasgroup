@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Yalnızca DemoDataSeeder'ın doldurduğu alan tablolarını boşaltır.
  * Kullanıcılar, roller, izinler, ayarlar, masraf kategorileri ve personel grupları KORUNUR.
+ * (personel@ kullanıcısı da korunur; personnel tablosu boşaldığı için user_id bağı düşer ve
+ * DemoDataSeeder::seedLiveDemo yeni ilk TV100 görevlisine yeniden bağlar — benzersizlik çakışması olmaz.)
  *
  * php artisan db:seed --class=Database\\Seeders\\Demo\\DemoDataResetSeeder
  * php artisan db:seed --class=DemoDataSeeder
@@ -16,6 +18,9 @@ use Illuminate\Support\Facades\Schema;
 class DemoDataResetSeeder extends Seeder
 {
     private const TABLES = [
+        'notifications',
+        'personnel_locations',
+        'personnel_breaks',
         'transactions',
         'customer_payments',
         'personnel_payments',
