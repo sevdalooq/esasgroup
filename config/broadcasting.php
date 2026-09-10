@@ -40,8 +40,10 @@ return [
                 'port' => env('REVERB_PORT', 443),
                 'scheme' => env('REVERB_SCHEME', 'https'),
                 'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
+                // Websocket sunucusu yanıt vermezse yayın en fazla bu kadar beklesin (saniye); Pusher istemcisi her istekte bunu kullanır
+                'timeout' => (int) env('REVERB_BROADCAST_TIMEOUT', 2),
             ],
-            // Websocket sunucusu yanıt vermezse HTTP isteği bekletilmesin (saniye)
+            // Guzzle bağlantı zaman aşımı
             'client_options' => [
                 'connect_timeout' => 1,
                 'timeout' => 2,
