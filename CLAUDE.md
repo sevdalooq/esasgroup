@@ -9,7 +9,7 @@ Güvenlik ve etkinlik şirketi (Esas Güvenlik A.Ş. / Esas Group Danışmanlık
 
 ## Yerel geliştirme
 ```bash
-docker compose up -d          # mysql:3306 redis:6379 mailpit:8025 phpmyadmin:8080
+./dev.sh                      # hepsi: docker (mysql 3306, redis, mailpit 8025, phpmyadmin 8080) + reverb 8081 + api 8000 + vite
 ./serve.sh                        # http://localhost:8000 (php artisan serve yerine; yükleme limitleri yükseltilmiş)
 npm run dev                   # Vite 5173 (HMR)
 php artisan migrate:fresh --seed

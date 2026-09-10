@@ -68,11 +68,15 @@ class LiveBroadcastObserver
             default => ['change', ['action' => $action]],
         };
 
-        try {
-            event(DayUpdated::forDay($day, $type, $payload));
-        } catch (\Throwable $e) {
-            report($e); // websocket sunucusu kapalıysa iş akışı durmasın
-        }
+        // Yayını HTTP yanıtı gönderildikten sonra yap; websocket sunucusu yavaşsa kullanıcı beklemesin
+        $event = DayUpdated::forDay($day, $type, $payload);
+        app()->terminating(function () use ($event) {
+            try {
+                event($event);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        });
     }
 
     private function personnelType(ProjectDayPersonnel $a, string $action): string

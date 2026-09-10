@@ -133,11 +133,13 @@ class LiveController extends Controller
             'last_location_at' => $location->recorded_at,
         ])->save();
 
-        try {
-            event(new PersonnelLocationUpdated($location));
-        } catch (\Throwable $e) {
-            report($e);
-        }
+        app()->terminating(function () use ($location) {
+            try {
+                event(new PersonnelLocationUpdated($location));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        });
 
         return response()->json(['message' => 'Konum kaydedildi.', 'project_day_id' => $dayId]);
     }

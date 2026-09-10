@@ -18,13 +18,15 @@ php artisan migrate:fresh --seed   # local ortamda demo verisi de yüklenir
 php artisan storage:link
 ```
 
-Çalıştırma (iki terminal):
+Çalıştırma (tek komut):
 
 ```bash
-./serve.sh                        # http://localhost:8000 (php artisan serve yerine; yükleme limitleri yükseltilmiş)
-npm run dev                       # Vite HMR (5173)
-php artisan reverb:start --port=8081   # Websocket (canlı izleme, anlık güncellemeler)
+./dev.sh        # Docker altyapısı + Reverb (8081) + API (8000) + Vite; Ctrl+C ile durur
 ```
+
+Ayrı ayrı: `./serve.sh` (API, `php artisan serve` yerine), `npm run dev`, `php artisan reverb:start --port=8081`.
+
+**Sorun giderme:** işlemler (teslim et, giriş vb.) aniden 30 saniye sürmeye başlarsa websocket sunucusu askıda kalmış demektir (bilgisayar uyku modundan sonra görülebilir). `./dev.sh` yeniden başlatır; elle: `pkill -9 -f reverb:start && php artisan reverb:start --port=8081`. Yayın zaman aşımı 2 sn ile sınırlandığı için bu durumda bile işlemler en fazla 2 sn gecikir.
 
 ## Demo hesapları
 
