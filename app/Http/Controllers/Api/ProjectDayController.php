@@ -23,7 +23,7 @@ class ProjectDayController extends Controller
         $projectDay->load([
             'project:id,name,customer_id,status',
             'project.customer:id,name',
-            'supervisor:id,first_name,last_name',
+            'supervisor:id,name,phone',
             'personnelAssignments.personnel:id,first_name,last_name,group_id,default_wage,phone',
             'personnelAssignments.personnel.group:id,name,commission_type,commission_value',
             'inventoryAssignments.inventory:id,name,type,serial_number,daily_rate',
@@ -45,7 +45,7 @@ class ProjectDayController extends Controller
 
         $projectDay->update($validated);
 
-        return response()->json($projectDay->load('supervisor:id,first_name,last_name'));
+        return response()->json($projectDay->load('supervisor:id,name,phone'));
     }
 
     /**

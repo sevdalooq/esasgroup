@@ -107,7 +107,7 @@ class ProjectController extends Controller
             'days' => function ($query) {
                 $query->orderBy('date');
             },
-            'days.supervisor:id,first_name,last_name',
+            'days.supervisor:id,name,phone',
             'days.personnelAssignments.personnel:id,first_name,last_name,group_id,default_wage',
             'days.personnelAssignments.personnel.group:id,name',
             'days.inventoryAssignments.inventory:id,name,type,serial_number,daily_rate',
