@@ -21,7 +21,7 @@ php artisan storage:link
 Çalıştırma (iki terminal):
 
 ```bash
-php -d upload_max_filesize=20M -d post_max_size=64M artisan serve   # http://localhost:8000 (dosya yükleme limitleri yükseltilmiş)
+./serve.sh                        # http://localhost:8000 (php artisan serve yerine; yükleme limitleri yükseltilmiş)
 npm run dev                       # Vite HMR (5173)
 php artisan reverb:start --port=8081   # Websocket (canlı izleme, anlık güncellemeler)
 ```
