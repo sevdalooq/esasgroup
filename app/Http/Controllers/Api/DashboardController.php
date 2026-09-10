@@ -127,8 +127,8 @@ class DashboardController extends Controller
     {
         return Project::with('customer:id,name')
             ->where('status', 'approved')
-            ->where('start_date', '>', now())
-            ->where('start_date', '<=', now()->addDays(14))
+            ->whereDate('start_date', '>=', today())
+            ->whereDate('start_date', '<=', today()->addDays(14))
             ->orderBy('start_date')
             ->limit(5)
             ->get()
@@ -138,7 +138,7 @@ class DashboardController extends Controller
                     'name' => $project->name,
                     'customer' => $project->customer->name ?? '-',
                     'start_date' => $project->start_date,
-                    'days_until' => Carbon::parse($project->start_date)->diffInDays(now()),
+                    'days_until' => max(0, (int) today()->diffInDays(Carbon::parse($project->start_date)->startOfDay(), false)),
                 ];
             });
     }

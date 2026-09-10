@@ -63,8 +63,8 @@ const getStatusText = (status: string) => {
     pending: 'Onay Bekliyor',
     approved: 'Onaylandı',
     in_progress: 'Devam Ediyor',
-    completed: 'Tamamlandi',
-    cancelled: 'Iptal',
+    completed: 'Tamamlandı',
+    cancelled: 'İptal',
   }
 
   return texts[status] || status
@@ -91,7 +91,7 @@ const formatDate = (date: string) => {
   })
 }
 
-// Kalan gun hesaplama
+// Kalan gün hesaplama
 const getDaysRemaining = (endDate: string) => {
   const end = new Date(endDate)
   const now = new Date()
@@ -314,7 +314,7 @@ const handleEventClick = (info: any) => {
           </VCard>
         </VCol>
 
-        <!-- Musteriler -->
+        <!-- Müşteriler -->
         <VCol
           v-if="dashboard.stats.total_customers !== undefined"
           cols="12"
@@ -337,7 +337,7 @@ const handleEventClick = (info: any) => {
                 <div class="text-h4">
                   {{ dashboard.stats.total_customers }}
                 </div>
-                <span class="text-body-2 text-medium-emphasis">Musteri</span>
+                <span class="text-body-2 text-medium-emphasis">Müşteri</span>
               </div>
             </VCardText>
           </VCard>
@@ -420,7 +420,7 @@ const handleEventClick = (info: any) => {
                           {{ getStatusText(project.status) }}
                         </VChip>
                         <div class="text-caption text-medium-emphasis">
-                          {{ project.completed_days }}/{{ project.total_days }} gun
+                          {{ project.completed_days }}/{{ project.total_days }} gün
                         </div>
                       </div>
                     </template>
@@ -459,7 +459,7 @@ const handleEventClick = (info: any) => {
                 icon="tabler-clock"
                 color="info"
               />
-              <span>Yaklasan Projeler</span>
+              <span>Yaklaşan Projeler</span>
             </VCardTitle>
 
             <VDivider />
@@ -480,7 +480,7 @@ const handleEventClick = (info: any) => {
                         variant="tonal"
                         size="40"
                       >
-                        <span class="text-body-1 font-weight-medium">{{ project.days_until }}</span>
+                        <span class="text-body-1 font-weight-medium">{{ project.days_until === 0 ? '!' : project.days_until }}</span>
                       </VAvatar>
                     </template>
 
@@ -488,7 +488,7 @@ const handleEventClick = (info: any) => {
                       {{ project.name }}
                     </VListItemTitle>
                     <VListItemSubtitle>
-                      {{ project.customer }} | Baslangic: {{ formatDate(project.start_date) }}
+                      {{ project.customer }} | Başlangıç: {{ formatDate(project.start_date) }}
                     </VListItemSubtitle>
 
                     <template #append>
@@ -497,7 +497,7 @@ const handleEventClick = (info: any) => {
                         size="small"
                         variant="tonal"
                       >
-                        {{ project.days_until }} gun sonra
+                        {{ project.days_until === 0 ? 'Bugün' : project.days_until === 1 ? 'Yarın' : `${project.days_until} gün sonra` }}
                       </VChip>
                     </template>
                   </VListItem>
@@ -550,7 +550,7 @@ const handleEventClick = (info: any) => {
                 </div>
                 <div class="d-flex align-center gap-1">
                   <div class="calendar-status-dot" style="background-color: #28c76f;" />
-                  <span class="text-caption">Tamamlandi</span>
+                  <span class="text-caption">Tamamlandı</span>
                 </div>
               </div>
 
@@ -790,7 +790,7 @@ const handleEventClick = (info: any) => {
 
               <VDivider class="my-4" />
 
-              <!-- Bu Ay vs Gecen Ay -->
+              <!-- Bu Ay vs Geçen Ay -->
               <div class="d-flex gap-4">
                 <div class="flex-grow-1 text-center pa-3 rounded bg-primary-lighten-5">
                   <div class="text-h5 font-weight-bold text-primary">
@@ -805,7 +805,7 @@ const handleEventClick = (info: any) => {
                     {{ dashboard.project_stats.last_month.total }}
                   </div>
                   <div class="text-caption text-medium-emphasis">
-                    Gecen Ay
+                    Geçen Ay
                   </div>
                 </div>
               </div>
