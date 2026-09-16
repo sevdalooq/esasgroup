@@ -485,58 +485,48 @@ onMounted(load)
 
 <template>
   <div class="zones-page">
-    <!-- Başlık -->
-    <VCard
-      class="no-print mb-4"
-      flat
-      border
-    >
-      <VCardText class="py-3">
-        <div class="d-flex align-center gap-2 flex-wrap">
-          <VBtn
-            icon
-            variant="text"
-            @click="router.push({ name: 'projects-id', params: { id: projectId } })"
-          >
-            <VIcon icon="tabler-arrow-left" />
-          </VBtn>
-          <div class="flex-grow-1 min-w-0">
-            <h5 class="text-h5">
-              Alan QR'ları
-            </h5>
-            <div class="text-body-2 text-medium-emphasis text-truncate">
-              {{ project?.name || '...' }} · {{ zones.length }} alan · {{ placedCount }} konumlu
-            </div>
-          </div>
-          <VTabs
-            v-model="tab"
-            density="compact"
-            class="zones-tabs"
-          >
-            <VTab value="harita">
-              <VIcon
-                start
-                icon="tabler-map-2"
-              />Harita ve Alanlar
-            </VTab>
-            <VTab value="yazdir">
-              <VIcon
-                start
-                icon="tabler-qrcode"
-              />Etiketler
-            </VTab>
-          </VTabs>
-          <VBtn
-            color="primary"
-            prepend-icon="tabler-printer"
-            :disabled="!zones.length"
-            @click="print"
-          >
-            Yazdır
-          </VBtn>
-        </div>
-      </VCardText>
-    </VCard>
+    <!-- Başlık satırı (ayrı bir bar gibi görünmesin) -->
+    <div class="no-print d-flex align-center gap-3 flex-wrap mb-4">
+      <VBtn
+        variant="tonal"
+        size="small"
+        prepend-icon="tabler-arrow-left"
+        @click="router.push({ name: 'projects-id', params: { id: projectId } })"
+      >
+        Projeye Dön
+      </VBtn>
+      <div class="text-body-1 text-medium-emphasis text-truncate">
+        <span class="font-weight-medium text-high-emphasis">{{ project?.name || '...' }}</span>
+        · {{ zones.length }} alan · {{ placedCount }} konumlu
+      </div>
+      <VSpacer />
+      <VTabs
+        v-model="tab"
+        density="compact"
+        class="zones-tabs"
+      >
+        <VTab value="harita">
+          <VIcon
+            start
+            icon="tabler-map-2"
+          />Harita ve Alanlar
+        </VTab>
+        <VTab value="yazdir">
+          <VIcon
+            start
+            icon="tabler-qrcode"
+          />Etiketler
+        </VTab>
+      </VTabs>
+      <VBtn
+        color="primary"
+        prepend-icon="tabler-printer"
+        :disabled="!zones.length"
+        @click="print"
+      >
+        Yazdır
+      </VBtn>
+    </div>
 
     <div
       v-if="loading"
@@ -972,9 +962,7 @@ onMounted(load)
 
 <style scoped>
 .zones-page {
-  padding: 16px;
-  max-width: 1600px;
-  margin-inline: auto;
+  inline-size: 100%;
 }
 
 .min-w-0 {
