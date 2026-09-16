@@ -23,7 +23,15 @@ interface LivePersonnel {
   check_out_time: string | null
   break_started_at: string | null
   break_minutes: number | null
-  location: { lat: number; lng: number; at: string | null } | null
+  location: { lat: number; lng: number; at: string | null; source?: string | null } | null
+}
+
+interface LiveZone {
+  id: number
+  name: string
+  lat: number | null
+  lng: number | null
+  description: string | null
 }
 
 interface LiveDay {
@@ -194,7 +202,7 @@ const onLocation = (event: PersonnelLocationEvent) => {
     day.personnel.forEach(row => {
       if (row.personnel_id !== event.personnel_id)
         return
-      row.location = { lat: event.lat, lng: event.lng, at }
+      row.location = { lat: event.lat, lng: event.lng, at, source: (event as Partial<{ source: string | null }>).source ?? row.location?.source ?? null }
       touched = true
       if (day.id === selectedId.value)
         syncMarker(row)
@@ -272,10 +280,37 @@ const mapEl = ref<HTMLDivElement | null>(null)
 let map: L.Map | null = null
 let venueMarker: L.Marker | null = null
 const markers = new Map<number, L.CircleMarker>()
+const zoneMarkers: L.Marker[] = []
 
-const popupHtml = (p: LivePersonnel) => `<strong>${p.name || ''}</strong><br>`
-  + `${p.zone ? `${p.zone} · ` : ''}${presenceLabel(p)}<br>`
-  + `<span style="opacity:.7">${p.location?.at ? `Konum: ${formatTime(p.location.at)} (${locationAge(p)})` : 'Konum yok'}</span>`
+// Seçili günün projesine ait alanlar (GET /field/projects/{project}/zones), proje bazında önbellek
+const zones = ref<LiveZone[]>([])
+const zonesCache = new Map<number, LiveZone[]>()
+let zonesRequest = 0
+
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' }[c] || c))
+
+const zoneHasCoords = (z: LiveZone) => z.lat !== null && z.lng !== null && Number.isFinite(Number(z.lat)) && Number.isFinite(Number(z.lng))
+
+const sourceLabel = (source?: string | null) => ({
+  gps: 'GPS',
+  device: 'GPS',
+  zone: 'Alan QR',
+  zone_qr: 'Alan QR',
+  qr: 'Alan QR',
+  manual: 'Manuel',
+} as Record<string, string>)[source || ''] || (source ? String(source) : '')
+
+const popupHtml = (p: LivePersonnel) => {
+  const source = sourceLabel(p.location?.source)
+  const locationLine = p.location?.at
+    ? `Konum: ${formatTime(p.location.at)} (${locationAge(p)})${source ? ` · ${source}` : ''}`
+    : (p.location ? `Konum var${source ? ` · ${source}` : ''}` : 'Konum yok')
+
+  return `<strong>${escapeHtml(p.name || '')}</strong><br>`
+    + `${presenceLabel(p)}<br>`
+    + `Alan: ${escapeHtml(p.zone || '—')}<br>`
+    + `<span style="opacity:.7">${locationLine}</span>`
+}
 
 const syncMarker = (p: LivePersonnel) => {
   if (!map)
@@ -307,6 +342,60 @@ const venueIcon = () => L.divIcon({
   popupAnchor: [0, -24],
 })
 
+const zoneIcon = (zone: LiveZone) => L.divIcon({
+  className: 'canli-zone-icon',
+  html: `<div class="canli-zone-square"><span>${escapeHtml(zone.name)}</span></div>`,
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+  popupAnchor: [0, -10],
+})
+
+const renderZones = () => {
+  const target = map
+  if (!target)
+    return
+  zoneMarkers.forEach(m => m.remove())
+  zoneMarkers.length = 0
+  zones.value.filter(zoneHasCoords).forEach(zone => {
+    const m = L.marker([Number(zone.lat), Number(zone.lng)], { icon: zoneIcon(zone), zIndexOffset: 200 })
+      .bindPopup(`<strong>${escapeHtml(zone.name)}</strong>${zone.description ? `<br>${escapeHtml(zone.description)}` : ''}<br><span style="opacity:.7">Alan</span>`)
+      .addTo(target)
+    zoneMarkers.push(m)
+  })
+}
+
+const loadZones = async (projectId: number | null) => {
+  const seq = ++zonesRequest
+  if (!projectId) {
+    zones.value = []
+    renderZones()
+
+    return
+  }
+  const cached = zonesCache.get(projectId)
+  if (cached) {
+    zones.value = cached
+    renderZones()
+
+    return
+  }
+  try {
+    const response = await $api<{ zones: LiveZone[] }>(`/field/projects/${projectId}/zones`)
+
+    zonesCache.set(projectId, response.zones || [])
+    if (seq !== zonesRequest)
+      return
+    zones.value = response.zones || []
+    renderMap()
+  }
+  catch {
+    if (seq === zonesRequest) {
+      zones.value = []
+      renderZones()
+    }
+  }
+}
+
 const renderMap = (fit = true) => {
   if (!map)
     return
@@ -316,18 +405,24 @@ const renderMap = (fit = true) => {
   venueMarker = null
 
   const day = selected.value
-  if (!day)
+  if (!day) {
+    zoneMarkers.forEach(m => m.remove())
+    zoneMarkers.length = 0
+
     return
+  }
 
   const bounds: L.LatLngExpression[] = []
   const vlat = Number(day.venue_lat)
   const vlng = Number(day.venue_lng)
   if (vlat && vlng) {
-    venueMarker = L.marker([vlat, vlng], { icon: venueIcon() })
-      .bindPopup(`<strong>${day.project.name}</strong><br>${day.project.venue_address || 'Etkinlik alanı'}`)
+    venueMarker = L.marker([vlat, vlng], { icon: venueIcon(), zIndexOffset: 300 })
+      .bindPopup(`<strong>${escapeHtml(day.project.name)}</strong><br>${escapeHtml(day.project.venue_address || 'Mekân')}`)
       .addTo(map)
     bounds.push([vlat, vlng])
   }
+  renderZones()
+  zones.value.filter(zoneHasCoords).forEach(z => bounds.push([Number(z.lat), Number(z.lng)]))
   day.personnel.forEach(p => {
     syncMarker(p)
     if (p.location)
@@ -363,7 +458,12 @@ watch(tab, value => {
     nextTick(() => setTimeout(() => map?.invalidateSize(), 50))
   }
 })
-watch(selectedId, () => renderMap())
+watch(selectedId, () => {
+  const projectId = selected.value?.project.id ?? null
+  zones.value = projectId ? (zonesCache.get(projectId) || []) : []
+  renderMap()
+  loadZones(projectId)
+})
 watch(loading, value => {
   if (!value && tab.value === 'harita')
     renderMap()
@@ -373,6 +473,7 @@ onBeforeUnmount(() => {
   map?.remove()
   map = null
   markers.clear()
+  zoneMarkers.length = 0
 })
 
 onMounted(() => load())
@@ -740,8 +841,10 @@ onMounted(() => load())
                   class="canli-map"
                 />
                 <div class="canli-map-legend">
+                  <span class="d-inline-flex align-center gap-1 me-2"><span class="canli-venue-pin canli-venue-pin--small" />Mekân</span>
+                  <span class="d-inline-flex align-center gap-1 me-2"><span class="canli-zone-square canli-zone-square--small" />Alan</span>
                   <span
-                    v-for="p in PRESENCE_ORDER"
+                    v-for="p in (['checked_in', 'on_break', 'checked_out'] as PresenceState[])"
                     :key="p"
                     class="d-inline-flex align-center gap-1 me-2"
                   >
@@ -750,7 +853,6 @@ onMounted(() => load())
                       :style="{ background: presenceHex(p) }"
                     />{{ presenceText(p) }}
                   </span>
-                  <span class="d-inline-flex align-center gap-1"><span class="canli-venue-pin canli-venue-pin--small" />Etkinlik alanı</span>
                 </div>
               </div>
             </VWindowItem>
@@ -956,6 +1058,44 @@ onMounted(() => load())
 }
 
 .canli-venue-pin--small {
+  display: inline-block;
+  inline-size: 10px;
+  block-size: 10px;
+  border-width: 1px;
+}
+
+.canli-zone-icon {
+  background: transparent;
+  border: 0;
+}
+
+.canli-zone-square {
+  position: relative;
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: 3px;
+  background: #ff9f43;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.canli-zone-square span {
+  position: absolute;
+  inset-inline-start: 18px;
+  inset-block-start: -3px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #333;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+.canli-zone-square--small {
   display: inline-block;
   inline-size: 10px;
   block-size: 10px;

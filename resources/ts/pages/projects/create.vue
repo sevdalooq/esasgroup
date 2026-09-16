@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { useSwal } from '@/composables/useSwal'
+import VenuePicker from '@/views/field/VenuePicker.vue'
+import type { VenueLatLng } from '@/views/field/VenuePicker.vue'
 
 const swal = useSwal()
 
@@ -31,6 +33,20 @@ const form = ref({
   notes: '',
   offer_price: 0,
   delivery_type: '' as string,
+  venue_address: '',
+  venue_lat: null as number | null,
+  venue_lng: null as number | null,
+})
+
+// Mekân konumu (VenuePicker v-model)
+const venue = computed<VenueLatLng | null>({
+  get: () => (form.value.venue_lat !== null && form.value.venue_lng !== null
+    ? { lat: form.value.venue_lat, lng: form.value.venue_lng }
+    : null),
+  set: value => {
+    form.value.venue_lat = value?.lat ?? null
+    form.value.venue_lng = value?.lng ?? null
+  },
 })
 
 const deliveryTypeOptions = [
@@ -83,7 +99,10 @@ const submit = async () => {
   try {
     const response = await $api('/projects', {
       method: 'POST',
-      body: form.value,
+      body: {
+        ...form.value,
+        venue_address: form.value.venue_address.trim() || null,
+      },
     })
 
     // Oluşturulan projenin detay sayfasına git
@@ -325,6 +344,20 @@ onMounted(() => {
                 label="Notlar"
                 rows="3"
                 :error-messages="errors.notes"
+              />
+            </VCol>
+
+            <VCol cols="12">
+              <h6 class="text-h6 mb-1">
+                Mekân
+              </h6>
+              <div class="text-caption text-medium-emphasis mb-3">
+                Adres ve harita konumu canlı izleme ile alan QR'larında kullanılır.
+              </div>
+              <VenuePicker
+                v-model="venue"
+                v-model:address="form.venue_address"
+                :address-errors="errors.venue_address || errors.venue_lat || errors.venue_lng"
               />
             </VCol>
 

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import VenuePicker from '@/views/field/VenuePicker.vue'
+import type { VenueLatLng } from '@/views/field/VenuePicker.vue'
+
 interface Customer {
   id: number
   name: string
@@ -13,6 +16,7 @@ interface Account {
 
 const route = useRoute()
 const router = useRouter()
+const projectId = computed(() => String((route.params as Record<string, string>).id))
 const loading = ref(false)
 const fetching = ref(true)
 const errors = ref<Record<string, string[]>>({})
@@ -27,7 +31,29 @@ const form = ref({
   end_date: '',
   notes: '',
   offer_price: 0,
+  venue_address: '',
+  venue_lat: null as number | null,
+  venue_lng: null as number | null,
 })
+
+// Mekân konumu (VenuePicker v-model)
+const venue = computed<VenueLatLng | null>({
+  get: () => (form.value.venue_lat !== null && form.value.venue_lng !== null
+    ? { lat: form.value.venue_lat, lng: form.value.venue_lng }
+    : null),
+  set: value => {
+    form.value.venue_lat = value?.lat ?? null
+    form.value.venue_lng = value?.lng ?? null
+  },
+})
+
+const toNumberOrNull = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '')
+    return null
+  const n = Number(value)
+
+  return Number.isFinite(n) ? n : null
+}
 
 const fetchCustomers = async () => {
   try {
@@ -51,11 +77,11 @@ const fetchAccounts = async () => {
 
 const fetchProject = async () => {
   try {
-    const project = await $api(`/projects/${route.params.id}`)
+    const project = await $api(`/projects/${projectId.value}`)
 
     // Sadece draft durumundaki projeler düzenlenebilir
     if (project.status !== 'draft') {
-      router.push({ name: 'projects-id', params: { id: route.params.id } })
+      router.push({ name: 'projects-id', params: { id: projectId.value } })
       return
     }
 
@@ -67,6 +93,9 @@ const fetchProject = async () => {
       end_date: project.end_date,
       notes: project.notes || '',
       offer_price: project.offer_price || 0,
+      venue_address: project.venue_address || '',
+      venue_lat: toNumberOrNull(project.venue_lat),
+      venue_lng: toNumberOrNull(project.venue_lng),
     }
   }
   catch (error) {
@@ -83,12 +112,15 @@ const submit = async () => {
   errors.value = {}
 
   try {
-    await $api(`/projects/${route.params.id}`, {
+    await $api(`/projects/${projectId.value}`, {
       method: 'PUT',
-      body: form.value,
+      body: {
+        ...form.value,
+        venue_address: form.value.venue_address.trim() || null,
+      },
     })
 
-    router.push({ name: 'projects-id', params: { id: route.params.id } })
+    router.push({ name: 'projects-id', params: { id: projectId.value } })
   }
   catch (error: any) {
     if (error.data?.errors)
@@ -227,6 +259,20 @@ onMounted(async () => {
                 label="Notlar"
                 rows="3"
                 :error-messages="errors.notes"
+              />
+            </VCol>
+
+            <VCol cols="12">
+              <h6 class="text-h6 mb-1">
+                Mekân
+              </h6>
+              <div class="text-caption text-medium-emphasis mb-3">
+                Adres ve harita konumu canlı izleme ile alan QR'larında kullanılır.
+              </div>
+              <VenuePicker
+                v-model="venue"
+                v-model:address="form.venue_address"
+                :address-errors="errors.venue_address || errors.venue_lat || errors.venue_lng"
               />
             </VCol>
 
