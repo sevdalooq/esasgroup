@@ -42,7 +42,12 @@ class AppConfig {
 
   /// Platforma göre varsayılan API adresi.
   /// Android emülatörü ana makineye 10.0.2.2 üzerinden erişir.
+  /// `--dart-define=API_BASE_URL=http://10.0.2.2:8020/api` ile geliştirmede sunucu adresi verilebilir.
+  static const String apiBaseUrlOverride =
+      String.fromEnvironment('API_BASE_URL', defaultValue: '');
+
   static String get defaultBaseUrl {
+    if (apiBaseUrlOverride.isNotEmpty) return apiBaseUrlOverride;
     if (!kIsWeb && Platform.isAndroid) return 'http://10.0.2.2:8000/api';
     return 'http://localhost:8000/api';
   }

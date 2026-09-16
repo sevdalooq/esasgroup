@@ -35,3 +35,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+dependency_overrides:
+  # Kurulu Flutter sürümü Color.toARGB32 içermiyor; geolocator_android 5.x bunu gerektiriyor
+  geolocator_android: 4.6.2

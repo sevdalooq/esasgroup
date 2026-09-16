@@ -1,4 +1,6 @@
-# Esas Saha – Mobil Uygulama (Flutter)
+# Esas Saha
+
+> Geliştirme: `flutter run -d <cihaz> --dart-define=API_BASE_URL=http://10.0.2.2:8020/api --dart-define=REVERB_HOST=10.0.2.2` (ana projede `./dev.sh` 8020 portunda IPv4'e açık API örneği başlatır; 8000 sadece IPv6/localhost olabilir). – Mobil Uygulama (Flutter)
 
 Esas Grup saha uygulaması. İki mod:
 
