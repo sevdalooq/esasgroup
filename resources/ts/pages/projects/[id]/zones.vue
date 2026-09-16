@@ -12,7 +12,7 @@ import type { VenueLatLng } from '@/views/field/VenuePicker.vue'
  */
 definePage({
   meta: {
-    layout: 'blank',
+    // Yan menü açık kalsın; yazdırmada layout parçaları CSS ile gizlenir
   },
 })
 
@@ -994,6 +994,12 @@ onMounted(load)
 
 .zone-item__qr {
   flex: 0 0 auto;
+  align-self: flex-start;
+  inline-size: 72px;
+  block-size: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 6px;
   overflow: hidden;
@@ -1114,6 +1120,23 @@ onMounted(load)
 </style>
 
 <style>
+/* Yazdırma: yan menü, üst bar ve altbilgiyi gizle, içerik tam genişlik (scoped dışı) */
+@media print {
+  .layout-vertical-nav,
+  .layout-navbar,
+  .layout-footer,
+  .layout-page-content > .no-print {
+    display: none !important;
+  }
+
+  .layout-wrapper.layout-nav-type-vertical .layout-content-wrapper,
+  .layout-page-content {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-inline-size: none !important;
+  }
+}
+
 /* Leaflet divIcon (scoped dışı) */
 .zone-marker-icon {
   background: transparent;
