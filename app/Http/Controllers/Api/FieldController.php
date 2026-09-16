@@ -147,6 +147,14 @@ class FieldController extends Controller
             return $this->dayOps->checkIn($assignment, $zone, true, $photoPath);
         });
 
+        app(\App\Services\LocationService::class)->recordOnCheckIn(
+            $personnel,
+            $projectDay->id,
+            $this->resolveZoneModel($validated, $projectDay),
+            isset($validated['lat']) ? (float) $validated['lat'] : null,
+            isset($validated['lng']) ? (float) $validated['lng'] : null,
+        );
+
         $assignment->load('personnel:' . self::PERSONNEL_SELECT);
 
         return response()->json([
@@ -492,6 +500,9 @@ class FieldController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:100',
+            'lat' => 'nullable|numeric|between:-90,90',
+            'lng' => 'nullable|numeric|between:-180,180',
+            'description' => 'nullable|string|max:255',
         ]);
 
         $name = trim($validated['name']);
@@ -504,10 +515,33 @@ class FieldController extends Controller
         $zone = ZoneOption::create([
             'project_id' => $project->id,
             'name' => $name,
+            'lat' => $validated['lat'] ?? null,
+            'lng' => $validated['lng'] ?? null,
+            'description' => $validated['description'] ?? null,
             'usage_count' => 0,
         ]);
 
         return response()->json(['message' => 'Alan eklendi.', 'zone' => $zone], 201);
+    }
+
+    public function updateZone(Request $request, ZoneOption $zone): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => 'sometimes|required|string|max:100',
+            'lat' => 'nullable|numeric|between:-90,90',
+            'lng' => 'nullable|numeric|between:-180,180',
+            'description' => 'nullable|string|max:255',
+        ]);
+        if (isset($validated['name'])) {
+            $validated['name'] = trim($validated['name']);
+            $dup = ZoneOption::where('project_id', $zone->project_id)->where('name', $validated['name'])->where('id', '!=', $zone->id)->exists();
+            if ($dup) {
+                $this->fail('Bu projede aynı isimde bir alan zaten var.', 'name');
+            }
+        }
+        $zone->update($validated);
+
+        return response()->json(['message' => 'Alan güncellendi.', 'zone' => $zone->fresh()]);
     }
 
     public function destroyZone(ZoneOption $zone): JsonResponse
@@ -659,6 +693,20 @@ class FieldController extends Controller
         }
 
         return $this->findByQr(Inventory::class, $parsed['uuid'], 'Bu QR koduna kayıtlı envanter bulunamadı.');
+    }
+
+    /** Alan modeli: QR ile ya da isimle (koordinat için) */
+    private function resolveZoneModel(array $validated, ProjectDay $projectDay): ?ZoneOption
+    {
+        if (!empty($validated['zone_payload'])) {
+            $parsed = HasQrCode::parseQrPayload($validated['zone_payload']);
+            if ($parsed && $parsed['type'] === 'ZONE') {
+                return ZoneOption::byQr($parsed['uuid'])->first();
+            }
+        }
+        $name = trim((string) ($validated['zone'] ?? ''));
+
+        return $name !== '' ? ZoneOption::where('project_id', $projectDay->project_id)->where('name', $name)->first() : null;
     }
 
     private function resolveZoneName(array $validated, ProjectDay $projectDay): ?string

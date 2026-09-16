@@ -118,28 +118,15 @@ class LiveController extends Controller
 
         $dayId = $data['project_day_id'] ?? $this->todaysDayIdFor($personnel);
 
-        $location = PersonnelLocation::create([
-            'personnel_id' => $personnel->id,
-            'project_day_id' => $dayId,
-            'lat' => $data['lat'],
-            'lng' => $data['lng'],
-            'accuracy' => $data['accuracy'] ?? null,
-            'recorded_at' => $data['recorded_at'] ?? now(),
-        ]);
-
-        $personnel->forceFill([
-            'last_lat' => $data['lat'],
-            'last_lng' => $data['lng'],
-            'last_location_at' => $location->recorded_at,
-        ])->save();
-
-        app()->terminating(function () use ($location) {
-            try {
-                event(new PersonnelLocationUpdated($location));
-            } catch (\Throwable $e) {
-                report($e);
-            }
-        });
+        app(\App\Services\LocationService::class)->record(
+            $personnel,
+            $dayId,
+            (float) $data['lat'],
+            (float) $data['lng'],
+            isset($data['accuracy']) ? (int) $data['accuracy'] : null,
+            'gps',
+            $data['recorded_at'] ?? null,
+        );
 
         return response()->json(['message' => 'Konum kaydedildi.', 'project_day_id' => $dayId]);
     }

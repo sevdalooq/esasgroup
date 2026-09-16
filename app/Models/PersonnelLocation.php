@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PersonnelLocation extends Model
 {
-    protected $fillable = ['personnel_id', 'project_day_id', 'lat', 'lng', 'accuracy', 'recorded_at'];
+    protected $fillable = ['personnel_id', 'project_day_id', 'lat', 'lng', 'accuracy', 'source', 'recorded_at'];
 
     protected $casts = ['lat' => 'float', 'lng' => 'float', 'recorded_at' => 'datetime'];
 

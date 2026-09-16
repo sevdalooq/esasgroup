@@ -66,6 +66,9 @@ class ProjectController extends Controller
             'offer_price' => 'nullable|numeric|min:0',
             'delivery_type' => 'nullable|string|max:50',
             'notes' => 'nullable|string',
+            'venue_address' => 'nullable|string|max:255',
+            'venue_lat' => 'nullable|numeric|between:-90,90',
+            'venue_lng' => 'nullable|numeric|between:-180,180',
         ]);
 
         DB::beginTransaction();
@@ -143,6 +146,9 @@ class ProjectController extends Controller
             'offer_number' => 'nullable|string|max:50',
             'delivery_type' => 'nullable|string|max:50',
             'notes' => 'nullable|string',
+            'venue_address' => 'nullable|string|max:255',
+            'venue_lat' => 'nullable|numeric|between:-90,90',
+            'venue_lng' => 'nullable|numeric|between:-180,180',
             'offer_price' => 'nullable|numeric|min:0',
         ];
 

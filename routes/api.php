@@ -224,6 +224,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:inventory.view')->get('/field/inventory/labels', [FieldController::class, 'inventoryLabels']);
     Route::middleware('permission:projects.view')->get('/field/projects/{project}/zones', [FieldController::class, 'zones']);
     Route::middleware('permission:projects.manage_days')->post('/field/projects/{project}/zones', [FieldController::class, 'storeZone']);
+    Route::middleware('permission:projects.manage_days')->put('/field/zones/{zone}', [FieldController::class, 'updateZone']);
     Route::middleware('permission:projects.manage_days')->delete('/field/zones/{zone}', [FieldController::class, 'destroyZone']);
 
     // Bildirimler (uygulama içi)

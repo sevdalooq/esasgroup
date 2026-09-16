@@ -14,10 +14,15 @@ class ZoneOption extends Model
 
     protected $appends = ['qr_payload'];
 
+    protected $casts = ['lat' => 'float', 'lng' => 'float'];
+
     protected $fillable = [
         'qr_code',
         'project_id',
         'name',
+        'lat',
+        'lng',
+        'description',
         'usage_count',
     ];
 

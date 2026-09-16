@@ -1626,13 +1626,17 @@ class DemoDataSeeder extends Seeder
             if ($day) {
                 $day->update(['venue_lat' => 41.0868, 'venue_lng' => 28.9737]);
                 $assignments = $day->personnelAssignments()->with('personnel')->get();
-                foreach ($assignments->take(6) as $i => $assignment) {
+                // Örnek konumlar: personel, atandığı alanın koordinatında (alan QR'ı okutulmuş gibi)
+                $zonesByName = \App\Models\ZoneOption::where('project_id', $tv100->id)->get()->keyBy('name');
+                foreach ($assignments->take(6) as $assignment) {
                     $p = $assignment->personnel;
-                    $lat = 41.0868 + (mt_rand(-40, 40) / 100000);
-                    $lng = 28.9737 + (mt_rand(-60, 60) / 100000);
+                    $zone = $assignment->zone ? $zonesByName->get($assignment->zone) : null;
+                    $lat = $zone?->lat ?? 41.0868;
+                    $lng = $zone?->lng ?? 28.9737;
                     \App\Models\PersonnelLocation::create([
                         'personnel_id' => $p->id, 'project_day_id' => $day->id,
-                        'lat' => $lat, 'lng' => $lng, 'accuracy' => mt_rand(5, 25), 'recorded_at' => now()->subMinutes(mt_rand(1, 12)),
+                        'lat' => $lat, 'lng' => $lng, 'accuracy' => $zone ? null : 15, 'source' => $zone ? 'zone' : 'gps',
+                        'recorded_at' => now()->subMinutes(mt_rand(1, 12)),
                     ]);
                     $p->forceFill(['last_lat' => $lat, 'last_lng' => $lng, 'last_location_at' => now()->subMinutes(mt_rand(1, 12))])->save();
                 }

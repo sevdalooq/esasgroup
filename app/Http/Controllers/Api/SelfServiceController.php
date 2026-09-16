@@ -54,6 +54,7 @@ class SelfServiceController extends Controller
         $assignment = $this->todaysAssignment($personnel, $data['project_day_id'] ?? null);
 
         $zone = $data['zone'] ?? null;
+        $zoneOption = null;
         if (!empty($data['zone_payload'])) {
             $parsed = ZoneOption::parseQrPayload($data['zone_payload']);
             if (!$parsed || $parsed['type'] !== 'ZONE') {
@@ -76,13 +77,13 @@ class SelfServiceController extends Controller
         // Personelin kendi girişi supervisor doğrulaması bekler (is_checked=false)
         $assignment = $this->dayOps->checkIn($assignment, $zone, false, null);
 
-        if (isset($data['lat'], $data['lng'])) {
-            $locationRequest = Request::create('/api/field/location', 'POST', [
-                'lat' => $data['lat'], 'lng' => $data['lng'], 'project_day_id' => $assignment->project_day_id,
-            ]);
-            $locationRequest->setUserResolver(fn () => $request->user());
-            app(LiveController::class)->storeLocation($locationRequest);
-        }
+        app(\App\Services\LocationService::class)->recordOnCheckIn(
+            $personnel,
+            $assignment->project_day_id,
+            $zoneOption,
+            isset($data['lat']) ? (float) $data['lat'] : null,
+            isset($data['lng']) ? (float) $data['lng'] : null,
+        );
 
         return response()->json(['message' => 'Girişiniz alındı' . ($zone ? " – {$zone}" : '') . '. Saha sorumlusu doğrulayacak.', 'assignment' => $assignment]);
     }
