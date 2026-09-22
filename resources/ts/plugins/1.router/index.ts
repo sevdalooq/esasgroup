@@ -18,7 +18,8 @@ function recursiveLayouts(route: RouteRecordRaw): RouteRecordRaw {
 }
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  // Üretimde laravel-vite-plugin BASE_URL'i '/build/' yapar; SPA her zaman kökten servis edilir.
+  history: createWebHistory('/'),
   scrollBehavior(to) {
     if (to.hash)
       return { el: to.hash, behavior: 'smooth', top: 60 }
