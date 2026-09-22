@@ -72,9 +72,22 @@ chmod -R ug+rwX storage bootstrap/cache
 
 echo "== Kuyruk / websocket süreçleri =="
 "$PHP_BIN" artisan queue:restart || true
-if command -v supervisorctl >/dev/null 2>&1; then
-  supervisorctl restart esasgroup-reverb  2>/dev/null || echo "(supervisor 'esasgroup-reverb' tanımlı değil)"
-  supervisorctl restart esasgroup-queue   2>/dev/null || echo "(supervisor 'esasgroup-queue' tanımlı değil)"
+# aaPanel'in Supervisor eklentisi supervisorctl'i PATH'e koymaz; bilinen yerlerde ara.
+SUPERVISORCTL=""
+for c in supervisorctl /www/server/panel/pyenv/bin/supervisorctl /usr/local/bin/supervisorctl /usr/bin/supervisorctl; do
+  if command -v "$c" >/dev/null 2>&1; then SUPERVISORCTL="$c"; break; fi
+done
+if [ -n "$SUPERVISORCTL" ] && "$SUPERVISORCTL" status >/dev/null 2>&1; then
+  "$SUPERVISORCTL" restart esasgroup-reverb 2>/dev/null || echo "(supervisor 'esasgroup-reverb' tanımlı değil)"
+  "$SUPERVISORCTL" restart esasgroup-queue  2>/dev/null || echo "(supervisor 'esasgroup-queue' tanımlı değil)"
+else
+  # Reverb yapılandırmayı yalnızca açılışta okur (REVERB_APP_KEY vb.). Süreci sonlandır;
+  # Supervisor (autorestart) onu yeni yapılandırmayla yeniden başlatır.
+  if pkill -f "artisan reverb:start"; then
+    echo "Reverb süreci sonlandırıldı; Supervisor yeniden başlatacak."
+  else
+    echo "UYARI: çalışan Reverb süreci bulunamadı; Supervisor'dan 'esasgroup-reverb' programını başlatın."
+  fi
 fi
 
 "$PHP_BIN" artisan up
