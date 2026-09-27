@@ -10,6 +10,7 @@ use App\Models\Personnel;
 use App\Models\Inventory;
 use App\Models\ProjectExpense;
 use App\Services\BlacklistService;
+use App\Services\InventoryAvailabilityService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -133,11 +134,18 @@ class ProjectDayController extends Controller
 
         $validated['quantity'] = $validated['quantity'] ?? 1;
 
-        // Envanter müsait mi kontrol et
+        // Envanter kullanılabilir mi (bakım/hasar/kayıp değil) ve o tarihte başka projede mi?
         $inventory = Inventory::find($validated['inventory_id']);
-        if ($inventory->current_status !== 'available') {
+        if (in_array($inventory->current_status, ['maintenance', 'damaged', 'lost'], true)) {
             return response()->json([
-                'message' => 'Bu envanter su anda musait degil.'
+                'message' => 'Bu envanter şu anda kullanılamaz durumda (bakım/hasar/kayıp).'
+            ], 422);
+        }
+        if ($conflict = app(InventoryAvailabilityService::class)->conflictFor($inventory, $projectDay)) {
+            return response()->json([
+                'message' => "\"{$inventory->name}\" ({$inventory->serial_number}) bu tarihte \"{$conflict}\" projesine atanmış. Başka birim seçin veya kiralama yapın.",
+                'conflict_project' => $conflict,
+                'requires_rental' => true,
             ], 422);
         }
 
@@ -152,6 +160,69 @@ class ProjectDayController extends Controller
         $assignment->load('inventory:id,name,type,serial_number,daily_rate');
 
         return response()->json($assignment, 201);
+    }
+
+    /**
+     * Ürün adına göre tarih bazlı müsaitlik (aynı isimli envanter bir havuzdur)
+     */
+    public function inventoryAvailability(ProjectDay $projectDay, InventoryAvailabilityService $service): JsonResponse
+    {
+        return response()->json([
+            'date' => $projectDay->date->toDateString(),
+            'items' => $service->availabilityByName($projectDay),
+        ]);
+    }
+
+    /**
+     * Ürün adı + adet ile toplu envanter ataması. Müsait birimler otomatik seçilir;
+     * yetersizse eksik adet döner ve kiralama önerilir.
+     */
+    public function bulkAssignInventory(Request $request, ProjectDay $projectDay, InventoryAvailabilityService $service): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'quantity' => 'required|integer|min:1',
+            'apply_to_all_days' => 'nullable|boolean',
+        ]);
+
+        $days = collect([$projectDay]);
+        if (!empty($validated['apply_to_all_days'])) {
+            $days = ProjectDay::where('project_id', $projectDay->project_id)->whereIn('status', ['pending', 'active'])->orderBy('date')->get();
+        }
+
+        $results = [];
+        $totalShortage = 0;
+
+        DB::transaction(function () use ($days, $validated, $service, &$results, &$totalShortage) {
+            foreach ($days as $day) {
+                $units = $service->availableUnits($validated['name'], $day, $validated['quantity']);
+                foreach ($units as $unit) {
+                    $day->inventoryAssignments()->create(['inventory_id' => $unit->id, 'quantity' => 1]);
+                }
+                $shortage = $validated['quantity'] - $units->count();
+                $totalShortage = max($totalShortage, $shortage);
+                $results[] = [
+                    'project_day_id' => $day->id,
+                    'date' => $day->date->toDateString(),
+                    'assigned' => $units->count(),
+                    'shortage' => max(0, $shortage),
+                ];
+            }
+        });
+
+        $assigned = array_sum(array_column($results, 'assigned'));
+        $message = "{$assigned} birim \"{$validated['name']}\" atandı.";
+        if ($totalShortage > 0) {
+            $message = "Envanterde yeterli \"{$validated['name']}\" yok: istenen {$validated['quantity']}, en az {$totalShortage} adet eksik. Eksik kalan için kiralama yapılması gerekiyor.";
+        }
+
+        return response()->json([
+            'message' => $message,
+            'assigned' => $assigned,
+            'shortage' => $totalShortage,
+            'requires_rental' => $totalShortage > 0,
+            'days' => $results,
+        ], $totalShortage > 0 ? 200 : 201);
     }
 
     /**

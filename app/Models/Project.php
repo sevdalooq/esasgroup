@@ -76,6 +76,12 @@ class Project extends Model
         return $this->hasMany(ProjectDay::class)->orderBy('date');
     }
 
+    /** Dışarıdan kiralanan envanter */
+    public function inventoryRentals(): HasMany
+    {
+        return $this->hasMany(InventoryRental::class)->orderByRaw('returned_at IS NULL DESC')->orderBy('due_date');
+    }
+
     /** Teklif kategori tabloları */
     public function proposalSections(): HasMany
     {

@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\ProposalController;
 use App\Http\Controllers\Api\ProposalTermTemplateController;
 use App\Http\Controllers\Api\AiController;
 use App\Http\Controllers\Api\BlacklistController;
+use App\Http\Controllers\Api\InventoryRentalController;
 use App\Http\Controllers\Api\ProjectProposalController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\NotificationController;
@@ -89,6 +90,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:inventory.edit')->post('/inventory/{inventory}/return', [InventoryController::class, 'returnFromPersonnel']);
     Route::middleware('permission:inventory.delete')->delete('/inventory/{inventory}', [InventoryController::class, 'destroy']);
 
+    // Kiralık envanter takibi
+    Route::middleware('permission:inventory.view')->get('/inventory-rentals', [InventoryRentalController::class, 'index']);
+    Route::middleware('permission:projects.manage_days')->post('/inventory-rentals', [InventoryRentalController::class, 'store']);
+    Route::middleware('permission:projects.manage_days')->put('/inventory-rentals/{rental}', [InventoryRentalController::class, 'update']);
+    Route::middleware('permission:projects.manage_days')->post('/inventory-rentals/{rental}/return', [InventoryRentalController::class, 'markReturned']);
+    Route::middleware('permission:projects.manage_days')->post('/inventory-rentals/{rental}/reopen', [InventoryRentalController::class, 'reopen']);
+    Route::middleware('permission:inventory.delete')->delete('/inventory-rentals/{rental}', [InventoryRentalController::class, 'destroy']);
+
     // Projects (Projeler)
     Route::middleware('permission:projects.view')->get('/projects', [ProjectController::class, 'index']);
     Route::middleware('permission:projects.view')->get('/projects/{project}', [ProjectController::class, 'show']);
@@ -110,6 +119,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:projects.manage_days')->delete('/project-days/{projectDay}/personnel/{assignment}', [ProjectDayController::class, 'removePersonnel']);
     Route::middleware('permission:projects.manage_days')->put('/project-days/{projectDay}/personnel/{assignment}', [ProjectDayController::class, 'updatePersonnelAssignment']);
     Route::middleware('permission:projects.manage_days')->post('/project-days/{projectDay}/inventory', [ProjectDayController::class, 'assignInventory']);
+    Route::middleware('permission:projects.view')->get('/project-days/{projectDay}/inventory/availability', [ProjectDayController::class, 'inventoryAvailability']);
+    Route::middleware('permission:projects.manage_days')->post('/project-days/{projectDay}/inventory/bulk', [ProjectDayController::class, 'bulkAssignInventory']);
     Route::middleware('permission:projects.manage_days')->delete('/project-days/{projectDay}/inventory/{assignment}', [ProjectDayController::class, 'removeInventory']);
     Route::middleware('permission:projects.manage_days')->post('/project-days/{projectDay}/inventory/{assignment}/deliver', [ProjectDayController::class, 'deliverInventory']);
     Route::middleware('permission:projects.manage_days')->post('/project-days/{projectDay}/copy-previous', [ProjectDayController::class, 'copyFromPreviousDay']);

@@ -7,6 +7,9 @@ import ProposalTermsEditor from '@/views/projects/ProposalTermsEditor.vue'
 import type { ProposalTermDraft } from '@/views/projects/ProposalTermsEditor.vue'
 import CoverLetterEditor from '@/views/projects/CoverLetterEditor.vue'
 import BulkPersonnelDialog from '@/views/projects/BulkPersonnelDialog.vue'
+import InventoryPickDialog from '@/views/projects/InventoryPickDialog.vue'
+import RentalFormDialog from '@/views/inventory/RentalFormDialog.vue'
+import type { RentalDraft } from '@/views/inventory/RentalFormDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getEcho } from '@/composables/useEcho'
 import { useSwal } from '@/composables/useSwal'
@@ -100,6 +103,7 @@ interface Project {
   supervisor?: { id: number; name: string; phone?: string | null } | null
   proposal_sections?: any[]
   proposal_terms?: any[]
+  inventory_rentals?: any[]
   days: ProjectDay[]
   summary?: {
     total_days: number
@@ -125,7 +129,6 @@ const loading = ref(true)
 const project = ref<Project | null>(null)
 const selectedDay = ref<ProjectDay | null>(null)
 const personnelList = ref<Personnel[]>([])
-const inventoryList = ref<Inventory[]>([])
 const projectPayments = ref<CustomerPayment[]>([])
 const paymentsLoading = ref(false)
 
@@ -232,24 +235,7 @@ const personnelForm = ref({
   daily_wage: 0,
   zone: '',
 })
-const inventoryForm = ref({
-  inventory_id: null as number | null,
-  quantity: 1,
-})
-
 // Seçilen envanterin tipi
-const selectedInventoryType = computed(() => {
-  if (!inventoryForm.value.inventory_id) return null
-  const inventory = inventoryList.value.find(i => i.id === inventoryForm.value.inventory_id)
-  return inventory?.type || null
-})
-
-// Zimmet seçildiğinde quantity'yi 1 yap
-watch(selectedInventoryType, (newType) => {
-  if (newType === 'zimmet') {
-    inventoryForm.value.quantity = 1
-  }
-})
 const newPersonnelForm = ref({
   first_name: '',
   last_name: '',
@@ -502,16 +488,6 @@ const fetchPersonnel = async () => {
   }
 }
 
-const fetchInventory = async () => {
-  try {
-    const response = await $api('/inventory/all')
-    inventoryList.value = response
-  }
-  catch (error) {
-    console.error('Error fetching inventory:', error)
-  }
-}
-
 const fetchCustomers = async () => {
   try {
     const response = await $api('/customers/all')
@@ -740,42 +716,42 @@ const removePersonnel = async (assignmentId: number) => {
 }
 
 // Envanter işlemleri
-const openInventoryDialog = async () => {
-  await fetchInventory()
-  inventoryForm.value = {
-    inventory_id: null,
-    quantity: 1,
-  }
+const openInventoryDialog = () => {
   showInventoryDialog.value = true
 }
 
-const assignInventory = async () => {
-  if (!selectedDay.value || !inventoryForm.value.inventory_id) return
+// Kiralık envanter
+const showRentalDialog = ref(false)
+const rentalInitial = ref<Partial<RentalDraft> | null>(null)
 
-  dialogLoading.value = true
+const openRentalDialog = (payload?: { item_name: string; quantity: number }) => {
+  if (!project.value) return
+  rentalInitial.value = {
+    project_id: project.value.id,
+    project_day_id: selectedDay.value?.id ?? null,
+    item_name: payload?.item_name || '',
+    quantity: payload?.quantity || 1,
+    rented_at: selectedDay.value?.date ? selectedDay.value.date.substring(0, 10) : project.value.start_date,
+    due_date: project.value.end_date,
+  }
+  showRentalDialog.value = true
+}
+
+const markRentalReturned = async (rental: any) => {
+  const result = await swal.confirm('İade edildi mi?', `${rental.quantity} × ${rental.item_name} iade edildi olarak işaretlenecek.`)
+  if (!result.isConfirmed) return
   try {
-    const response = await $api(`/project-days/${selectedDay.value.id}/inventory`, {
-      method: 'POST',
-      body: inventoryForm.value,
-    })
-    showInventoryDialog.value = false
-
-    // Transform ve seçili güne yeni atamayı ekle (reaktivite için yeni array oluştur)
-    const transformedAssignment = transformAssignments([response])[0]
-    selectedDay.value.inventoryAssignments = [...selectedDay.value.inventoryAssignments, transformedAssignment]
-
-    // Özet bilgileri güncelle
-    if (project.value?.summary) {
-      project.value.summary.total_inventory_assignments++
-    }
+    await $api(`/inventory-rentals/${rental.id}/return`, { method: 'POST' })
+    swal.toast('success', 'İade işaretlendi')
+    await fetchProject(true)
   }
   catch (error: any) {
-    swal.toast('error', error.data?.message || 'Atama basarisiz')
-  }
-  finally {
-    dialogLoading.value = false
+    swal.toast('error', error.data?.message || 'İşlem başarısız')
   }
 }
+
+const rentalStatusColor = (s: string) => ({ rented: 'info', overdue: 'error', returned: 'success' } as Record<string, string>)[s] || 'default'
+const rentalStatusText = (s: string) => ({ rented: 'Kirada', overdue: 'İade gecikti', returned: 'İade edildi' } as Record<string, string>)[s] || s
 
 const removeInventory = async (assignmentId: number) => {
   if (!selectedDay.value) return
@@ -2226,6 +2202,58 @@ onBeforeUnmount(() => {
             <VAlert v-else type="info" variant="tonal">
               Bu gun icin henuz envanter atanmamis.
             </VAlert>
+
+            <!-- Kiralık envanter (proje geneli) -->
+            <div class="d-flex align-center justify-space-between mt-6 mb-2">
+              <h6 class="text-subtitle-1 font-weight-medium">
+                <VIcon icon="tabler-truck-delivery" size="18" class="me-1" color="warning" />
+                Kiralık Envanter ({{ project.inventory_rentals?.length || 0 }})
+              </h6>
+              <VBtn
+                v-if="authStore.hasPermission('projects.manage_days')"
+                size="small"
+                variant="tonal"
+                color="warning"
+                prepend-icon="tabler-plus"
+                @click="openRentalDialog()"
+              >
+                Kiralama Ekle
+              </VBtn>
+            </div>
+            <VTable v-if="(project.inventory_rentals?.length || 0) > 0" density="compact">
+              <thead>
+                <tr>
+                  <th>Ürün</th>
+                  <th class="text-center">Adet</th>
+                  <th>Tedarikçi</th>
+                  <th>Kiralama</th>
+                  <th>İade Tarihi</th>
+                  <th>Durum</th>
+                  <th class="text-end">Maliyet</th>
+                  <th class="text-center">İşlem</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in project.inventory_rentals" :key="r.id" :class="{ 'bg-light-error': r.status === 'overdue' }">
+                  <td class="font-weight-medium">{{ r.item_name }}</td>
+                  <td class="text-center">{{ r.quantity }}</td>
+                  <td>{{ r.supplier || '-' }}</td>
+                  <td>{{ formatDate(r.rented_at) }}</td>
+                  <td>{{ r.due_date ? formatDate(r.due_date) : '-' }}</td>
+                  <td>
+                    <VChip size="x-small" :color="rentalStatusColor(r.status)">{{ rentalStatusText(r.status) }}</VChip>
+                    <div v-if="r.returned_at" class="text-caption text-disabled">{{ formatDate(r.returned_at) }}</div>
+                  </td>
+                  <td class="text-end">{{ r.total_cost ? formatCurrency(r.total_cost) : '-' }}</td>
+                  <td class="text-center">
+                    <VBtn v-if="!r.returned_at && authStore.hasPermission('projects.manage_days')" size="x-small" color="success" variant="tonal" @click="markRentalReturned(r)">
+                      İade Edildi
+                    </VBtn>
+                  </td>
+                </tr>
+              </tbody>
+            </VTable>
+            <div v-else class="text-caption text-disabled">Bu projede dışarıdan kiralanan envanter yok.</div>
           </VCardText>
 
           <VDivider />
@@ -2611,59 +2639,6 @@ onBeforeUnmount(() => {
       </VCard>
     </VDialog>
 
-    <!-- Envanter Ekleme Dialog -->
-    <VDialog v-model="showInventoryDialog" max-width="500">
-      <VCard>
-        <VCardTitle class="pa-4">Envanter Ekle</VCardTitle>
-        <VCardText>
-          <VRow>
-            <VCol cols="12">
-              <AppAutocomplete
-                v-model="inventoryForm.inventory_id"
-                :items="inventoryList"
-                item-value="id"
-                item-title="name"
-                label="Envanter Sec *"
-              >
-                <template #item="{ props, item }">
-                  <VListItem v-bind="props" :title="item.raw.name">
-                    <template #subtitle>
-                      {{ item.raw.type === 'rental' ? formatCurrency(item.raw.daily_rate) + '/gun' : 'Zimmet' }}
-                    </template>
-                  </VListItem>
-                </template>
-              </AppAutocomplete>
-            </VCol>
-            <VCol v-if="selectedInventoryType === 'rental'" cols="12">
-              <AppTextField
-                v-model.number="inventoryForm.quantity"
-                label="Adet"
-                type="number"
-                min="1"
-              />
-            </VCol>
-            <VCol v-else-if="selectedInventoryType === 'zimmet'" cols="12">
-              <VAlert type="info" variant="tonal" density="compact">
-                Zimmet tipi urunler tekil olarak atanir.
-              </VAlert>
-            </VCol>
-          </VRow>
-        </VCardText>
-        <VCardActions class="pa-4">
-          <VSpacer />
-          <VBtn variant="outlined" @click="showInventoryDialog = false">Iptal</VBtn>
-          <VBtn
-            color="primary"
-            :loading="dialogLoading"
-            :disabled="!inventoryForm.inventory_id"
-            @click="assignInventory"
-          >
-            Ekle
-          </VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
-
     <!-- Durum Değiştirme Dialog -->
     <VDialog v-model="showStatusDialog" max-width="400">
       <VCard>
@@ -2910,6 +2885,24 @@ onBeforeUnmount(() => {
         </VCardActions>
       </VCard>
     </VDialog>
+
+    <!-- Envanter Ekle (müsaitlik kontrollü) -->
+    <InventoryPickDialog
+      v-model="showInventoryDialog"
+      :day-id="selectedDay?.id ?? null"
+      :day-date="selectedDay?.date ?? null"
+      :project-day-count="project.days.length"
+      @assigned="fetchProject(true)"
+      @rental-needed="openRentalDialog"
+    />
+
+    <!-- Kiralama kaydı -->
+    <RentalFormDialog
+      v-model="showRentalDialog"
+      :initial="rentalInitial"
+      lock-project
+      @saved="fetchProject(true)"
+    />
 
     <!-- Toplu Personel Ekle -->
     <BulkPersonnelDialog

@@ -138,6 +138,8 @@ class ProjectController extends Controller
             'supervisor:id,name,phone,email',
             'proposalSections.items',
             'proposalTerms',
+            'inventoryRentals.createdBy:id,name',
+            'inventoryRentals.returnedBy:id,name',
             'days' => function ($query) {
                 $query->orderBy('date');
             },

@@ -59,6 +59,12 @@ export default [
     permission: 'inventory.view',
   },
   {
+    title: 'Kiralık Envanter',
+    to: { name: 'inventory-rentals' },
+    icon: { icon: 'tabler-truck-delivery' },
+    permission: 'inventory.view',
+  },
+  {
     title: 'Başvurular',
     to: { name: 'personnel-applications' },
     icon: { icon: 'tabler-user-plus' },

@@ -48,6 +48,7 @@ const routePermissions: Record<string, string> = {
   'personnel-blacklist': 'personnel.blacklist_request',
   'inventory': 'inventory.view',
   'inventory-labels': 'inventory.view',
+  'inventory-rentals': 'inventory.view',
   'saha': 'field.access',
   'saha-day-id': 'field.access',
   'canli': 'field.access',
