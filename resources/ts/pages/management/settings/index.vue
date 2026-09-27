@@ -370,6 +370,57 @@ onMounted(() => {
           <VWindowItem value="notifications">
             <VRow>
               <VCol cols="12">
+                <VCard variant="outlined">
+                  <VCardTitle class="text-subtitle-1">
+                    <VIcon icon="tabler-alarm" class="me-2" color="warning" />
+                    Saha Sorumlusu Hatırlatmaları
+                  </VCardTitle>
+                  <VCardText>
+                    <VRow>
+                      <VCol cols="12">
+                        <VSwitch
+                          :model-value="getSettingValue('notifications', 'reminders_enabled', true)"
+                          label="Hatırlatma bildirimlerini gönder"
+                          hint="Zamanlayıcı 15 dakikada bir kontrol eder (php artisan reminders:dispatch)"
+                          persistent-hint
+                          @update:model-value="setSettingValue('notifications', 'reminders_enabled', $event)"
+                        />
+                      </VCol>
+                      <VCol cols="12" md="4">
+                        <AppTextField
+                          :model-value="getSettingValue('notifications', 'reminder_personnel_days_before', 2)"
+                          label="Personel ekleme hatırlatması (gün önce)"
+                          type="number"
+                          hint="Proje başlamadan bu kadar gün önce personelsiz gün varsa sorumluya bildirim"
+                          persistent-hint
+                          @update:model-value="setSettingValue('notifications', 'reminder_personnel_days_before', $event)"
+                        />
+                      </VCol>
+                      <VCol cols="12" md="4">
+                        <AppTextField
+                          :model-value="getSettingValue('notifications', 'reminder_event_hours_before', 6)"
+                          label="Etkinlik hatırlatması (saat önce)"
+                          type="number"
+                          hint="Günün başlangıç saatinden bu kadar saat önce (saat girilmemişse 09:00)"
+                          persistent-hint
+                          @update:model-value="setSettingValue('notifications', 'reminder_event_hours_before', $event)"
+                        />
+                      </VCol>
+                      <VCol cols="12" md="4">
+                        <AppTextField
+                          :model-value="getSettingValue('notifications', 'reminder_supervisor_days_before', 3)"
+                          label="Sorumlu atanmadı uyarısı (gün önce)"
+                          type="number"
+                          hint="Saha sorumlusu atanmamış projelerde yöneticilere bildirim"
+                          persistent-hint
+                          @update:model-value="setSettingValue('notifications', 'reminder_supervisor_days_before', $event)"
+                        />
+                      </VCol>
+                    </VRow>
+                  </VCardText>
+                </VCard>
+              </VCol>
+              <VCol cols="12">
                 <VSwitch
                   :model-value="getSettingValue('notifications', 'email_notifications_enabled', true)"
                   label="E-posta Bildirimleri"

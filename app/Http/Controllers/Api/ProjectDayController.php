@@ -39,7 +39,8 @@ class ProjectDayController extends Controller
     public function update(Request $request, ProjectDay $projectDay): JsonResponse
     {
         $validated = $request->validate([
-            'supervisor_id' => 'nullable|exists:personnel,id',
+            'supervisor_id' => 'nullable|exists:users,id',
+            'start_time' => 'nullable|date_format:H:i',
             'notes' => 'nullable|string',
         ]);
 

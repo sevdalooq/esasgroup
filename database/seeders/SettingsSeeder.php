@@ -180,6 +180,38 @@ class SettingsSeeder extends Seeder
                 'display_name' => 'SMS Gönderen Adı',
                 'description' => 'SMS başlığında görünecek gönderen adı',
             ],
+            [
+                'key' => 'reminders_enabled',
+                'value' => 'true',
+                'type' => 'boolean',
+                'group' => 'notifications',
+                'display_name' => 'Hatırlatma Bildirimleri',
+                'description' => 'Saha sorumlusuna zamanlı hatırlatma gönder',
+            ],
+            [
+                'key' => 'reminder_personnel_days_before',
+                'value' => '2',
+                'type' => 'number',
+                'group' => 'notifications',
+                'display_name' => 'Personel Ekleme Hatırlatması (gün önce)',
+                'description' => 'Proje başlamadan kaç gün önce eksik personel uyarısı gitsin',
+            ],
+            [
+                'key' => 'reminder_event_hours_before',
+                'value' => '6',
+                'type' => 'number',
+                'group' => 'notifications',
+                'display_name' => 'Etkinlik Hatırlatması (saat önce)',
+                'description' => 'Etkinlik günü başlamadan kaç saat önce hatırlatma gitsin',
+            ],
+            [
+                'key' => 'reminder_supervisor_days_before',
+                'value' => '3',
+                'type' => 'number',
+                'group' => 'notifications',
+                'display_name' => 'Sorumlu Atanmadı Uyarısı (gün önce)',
+                'description' => 'Saha sorumlusu atanmamış projeler için yöneticilere kaç gün önce uyarı gitsin',
+            ],
 
             // E-posta Ayarları
             [

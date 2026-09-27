@@ -66,9 +66,10 @@ interface Expense {
 interface ProjectDay {
   id: number
   date: string
+  start_time?: string | null
   status: 'pending' | 'active' | 'completed'
   supervisor_id: number | null
-  supervisor?: Personnel
+  supervisor?: { id: number; name: string; phone?: string | null } | null
   personnelAssignments: PersonnelAssignment[]
   inventoryAssignments: InventoryAssignment[]
   expenses: Expense[]
@@ -293,6 +294,45 @@ const fetchSupervisors = async () => {
   }
   catch (error) {
     console.error('Error fetching supervisors:', error)
+  }
+}
+
+// ---- Gün ayarları (başlangıç saati, günün sorumlusu)
+const showDaySettingsDialog = ref(false)
+const daySettingsForm = ref({ start_time: '', supervisor_id: null as number | null })
+
+const openDaySettings = async () => {
+  if (!selectedDay.value) return
+  await fetchSupervisors()
+  daySettingsForm.value = {
+    start_time: selectedDay.value.start_time ? selectedDay.value.start_time.substring(0, 5) : '',
+    supervisor_id: selectedDay.value.supervisor_id ?? null,
+  }
+  showDaySettingsDialog.value = true
+}
+
+const saveDaySettings = async () => {
+  if (!selectedDay.value) return
+  dialogLoading.value = true
+  try {
+    const response = await $api(`/project-days/${selectedDay.value.id}`, {
+      method: 'PUT',
+      body: {
+        start_time: daySettingsForm.value.start_time || null,
+        supervisor_id: daySettingsForm.value.supervisor_id,
+      },
+    })
+    selectedDay.value.start_time = response.start_time
+    selectedDay.value.supervisor_id = response.supervisor_id
+    selectedDay.value.supervisor = response.supervisor
+    showDaySettingsDialog.value = false
+    swal.toast('success', 'Gün ayarları kaydedildi')
+  }
+  catch (error: any) {
+    swal.toast('error', error.data?.message || 'Kaydedilemedi')
+  }
+  finally {
+    dialogLoading.value = false
   }
 }
 
@@ -1856,10 +1896,16 @@ onBeforeUnmount(() => {
       <VCol cols="12" md="9">
         <VCard v-if="selectedDay">
           <VCardTitle class="d-flex align-center justify-space-between flex-wrap gap-2 pa-4">
-            <div class="d-flex align-center gap-2">
+            <div class="d-flex align-center gap-2 flex-wrap">
               <span>{{ formatDate(selectedDay.date) }}</span>
               <VChip :color="getDayStatusColor(selectedDay.status)" size="small">
                 {{ getDayStatusText(selectedDay.status) }}
+              </VChip>
+              <VChip size="small" variant="tonal" prepend-icon="tabler-clock" class="cursor-pointer" @click="openDaySettings">
+                {{ selectedDay.start_time ? selectedDay.start_time.substring(0, 5) : 'Saat girilmedi' }}
+              </VChip>
+              <VChip size="small" variant="tonal" :color="selectedDay.supervisor ? 'info' : 'warning'" prepend-icon="tabler-user-shield" class="cursor-pointer" @click="openDaySettings">
+                {{ selectedDay.supervisor?.name || 'Gün sorumlusu yok' }}
               </VChip>
             </div>
             <div class="d-flex gap-2 flex-wrap">
@@ -2832,6 +2878,41 @@ onBeforeUnmount(() => {
           >
             Guncelle
           </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- Gün Ayarları Dialog -->
+    <VDialog v-model="showDaySettingsDialog" max-width="450">
+      <VCard>
+        <VCardTitle class="pa-4">Gün Ayarları – {{ selectedDay ? formatDate(selectedDay.date) : '' }}</VCardTitle>
+        <VCardText>
+          <VRow>
+            <VCol cols="12">
+              <AppTextField
+                v-model="daySettingsForm.start_time"
+                label="Başlangıç Saati"
+                type="time"
+                hint="Etkinlik hatırlatması bu saatten önce gönderilir (boşsa 09:00)"
+                persistent-hint
+              />
+            </VCol>
+            <VCol cols="12">
+              <AppAutocomplete
+                v-model="daySettingsForm.supervisor_id"
+                :items="supervisors"
+                item-title="name"
+                item-value="id"
+                label="Günün Saha Sorumlusu"
+                clearable
+              />
+            </VCol>
+          </VRow>
+        </VCardText>
+        <VCardActions class="pa-4">
+          <VSpacer />
+          <VBtn variant="outlined" @click="showDaySettingsDialog = false">İptal</VBtn>
+          <VBtn color="primary" :loading="dialogLoading" @click="saveDaySettings">Kaydet</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>

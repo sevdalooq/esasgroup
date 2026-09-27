@@ -10,6 +10,8 @@
 #   - .env dosyası site kökünde oluşturulmuş olmalı (bkz. .env.example); script .env'i ASLA üzerine yazmaz.
 #   - Site kök dizini (document root) /public olarak ayarlanmalı, "Anti-XSS" (open_basedir) kapatılmalı.
 #   - Supervisor (aaPanel > App Store) ile queue:work ve reverb:start süreçleri; aşağıda restart ediliyor.
+#   - Zamanlayıcı (hatırlatma bildirimleri): aaPanel > Cron > Shell Script, her dakika:
+#       cd /www/wwwroot/esasgroup.fraudova.com && /www/server/php/83/bin/php artisan schedule:run >> /dev/null 2>&1
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/www/wwwroot/esasgroup.fraudova.com}"

@@ -14,6 +14,7 @@ class ProjectDay extends Model
     protected $fillable = [
         'project_id',
         'date',
+        'start_time',
         'supervisor_id',
         'status',
         'start_photo',
