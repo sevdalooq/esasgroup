@@ -26,7 +26,7 @@ export interface ProposalSectionDraft {
 
 const props = defineProps<{
   modelValue: ProposalSectionDraft[]
-  readonly?: boolean
+  locked?: boolean
   defaultDays?: number
 }>()
 
@@ -121,7 +121,7 @@ defineExpose({ grandTotal })
             <AppTextField
               v-model="section.title"
               label="Bölüm Başlığı"
-              :readonly="readonly"
+              :readonly="locked"
               density="compact"
             />
           </VCol>
@@ -130,17 +130,17 @@ defineExpose({ grandTotal })
               v-model="section.unit_label"
               :items="unitOptions"
               label="Miktar Birimi"
-              :readonly="readonly"
+              :readonly="locked"
               density="compact"
             />
           </VCol>
           <VCol cols="12" md="4" class="d-flex flex-wrap gap-x-4">
-            <VCheckbox v-model="section.show_duration" label="Çalışma süresi" density="compact" hide-details :disabled="readonly" />
-            <VCheckbox v-model="section.show_days" label="Gün" density="compact" hide-details :disabled="readonly" @update:model-value="section.items.forEach(it => recalc(section, it))" />
-            <VCheckbox v-model="section.show_unit_price" label="Birim fiyat" density="compact" hide-details :disabled="readonly" />
+            <VCheckbox v-model="section.show_duration" label="Çalışma süresi" density="compact" hide-details :disabled="locked" />
+            <VCheckbox v-model="section.show_days" label="Gün" density="compact" hide-details :disabled="locked" @update:model-value="section.items.forEach(it => recalc(section, it))" />
+            <VCheckbox v-model="section.show_unit_price" label="Birim fiyat" density="compact" hide-details :disabled="locked" />
           </VCol>
           <VCol cols="12" md="1" class="d-flex justify-end">
-            <template v-if="!readonly">
+            <template v-if="!locked">
               <VBtn icon variant="text" size="x-small" :disabled="sIndex === 0" @click="moveSection(sIndex, -1)"><VIcon icon="tabler-chevron-up" /></VBtn>
               <VBtn icon variant="text" size="x-small" :disabled="sIndex === sections.length - 1" @click="moveSection(sIndex, 1)"><VIcon icon="tabler-chevron-down" /></VBtn>
               <VBtn icon variant="text" size="x-small" color="error" @click="removeSection(sIndex)"><VIcon icon="tabler-trash" /></VBtn>
@@ -158,24 +158,24 @@ defineExpose({ grandTotal })
               <th v-if="section.show_days" style="width: 80px;">Gün</th>
               <th v-if="section.show_unit_price" style="width: 140px;">Birim Fiyat</th>
               <th style="width: 150px;">Toplam</th>
-              <th v-if="!readonly" style="width: 96px;" />
+              <th v-if="!locked" style="width: 96px;" />
             </tr>
           </thead>
           <tbody>
             <tr v-for="(item, iIndex) in section.items" :key="iIndex">
               <td class="text-center">{{ iIndex + 1 }}</td>
               <td>
-                <VTextField v-model="item.description" placeholder="Hizmet adı" density="compact" variant="plain" hide-details :readonly="readonly" />
-                <VTextField v-model="item.note" placeholder="Açıklama (opsiyonel)" density="compact" variant="plain" hide-details class="text-caption item-note-field" :readonly="readonly" />
+                <VTextField v-model="item.description" placeholder="Hizmet adı" density="compact" variant="plain" hide-details :readonly="locked" />
+                <VTextField v-model="item.note" placeholder="Açıklama (opsiyonel)" density="compact" variant="plain" hide-details class="text-caption item-note-field" :readonly="locked" />
               </td>
               <td v-if="section.show_duration">
-                <VTextField v-model="item.duration_label" placeholder="12 Saat" density="compact" variant="plain" hide-details :readonly="readonly" />
+                <VTextField v-model="item.duration_label" placeholder="12 Saat" density="compact" variant="plain" hide-details :readonly="locked" />
               </td>
               <td>
-                <VTextField v-model.number="item.quantity" type="number" min="0" density="compact" variant="plain" hide-details :readonly="readonly" @update:model-value="recalc(section, item)" />
+                <VTextField v-model.number="item.quantity" type="number" min="0" density="compact" variant="plain" hide-details :readonly="locked" @update:model-value="recalc(section, item)" />
               </td>
               <td v-if="section.show_days">
-                <VTextField v-model.number="item.days" type="number" min="0" density="compact" variant="plain" hide-details :readonly="readonly" @update:model-value="recalc(section, item)" />
+                <VTextField v-model.number="item.days" type="number" min="0" density="compact" variant="plain" hide-details :readonly="locked" @update:model-value="recalc(section, item)" />
               </td>
               <td v-if="section.show_unit_price">
                 <VTextField
@@ -187,7 +187,7 @@ defineExpose({ grandTotal })
                   density="compact"
                   variant="plain"
                   hide-details
-                  :readonly="readonly"
+                  :readonly="locked"
                   @update:model-value="recalc(section, item)"
                 />
               </td>
@@ -200,11 +200,11 @@ defineExpose({ grandTotal })
                   density="compact"
                   variant="plain"
                   hide-details
-                  :readonly="readonly || (section.show_unit_price && hasUnitPrice(item))"
+                  :readonly="locked || (section.show_unit_price && hasUnitPrice(item))"
                   :class="{ 'text-disabled': section.show_unit_price && hasUnitPrice(item) }"
                 />
               </td>
-              <td v-if="!readonly" class="text-no-wrap">
+              <td v-if="!locked" class="text-no-wrap">
                 <VBtn icon variant="text" size="x-small" :disabled="iIndex === 0" @click="moveItem(section, iIndex, -1)"><VIcon icon="tabler-chevron-up" size="16" /></VBtn>
                 <VBtn icon variant="text" size="x-small" :disabled="iIndex === section.items.length - 1" @click="moveItem(section, iIndex, 1)"><VIcon icon="tabler-chevron-down" size="16" /></VBtn>
                 <VBtn icon variant="text" size="x-small" color="error" @click="removeItem(section, iIndex)"><VIcon icon="tabler-x" size="16" /></VBtn>
@@ -217,19 +217,19 @@ defineExpose({ grandTotal })
                 Bölüm Toplamı
               </td>
               <td class="font-weight-bold">{{ formatCurrency(sectionTotal(section)) }}</td>
-              <td v-if="!readonly" />
+              <td v-if="!locked" />
             </tr>
           </tfoot>
         </VTable>
 
-        <VBtn v-if="!readonly" size="small" variant="text" prepend-icon="tabler-plus" class="mt-1" @click="addItem(section)">
+        <VBtn v-if="!locked" size="small" variant="text" prepend-icon="tabler-plus" class="mt-1" @click="addItem(section)">
           Satır Ekle
         </VBtn>
       </VCardText>
     </VCard>
 
     <div class="d-flex flex-wrap align-center justify-space-between gap-3">
-      <VMenu v-if="!readonly">
+      <VMenu v-if="!locked">
         <template #activator="{ props: menuProps }">
           <VBtn v-bind="menuProps" color="primary" variant="tonal" prepend-icon="tabler-table-plus">
             Bölüm Ekle

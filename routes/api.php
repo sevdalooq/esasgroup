@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\ProposalTermTemplateController;
 use App\Http\Controllers\Api\AiController;
 use App\Http\Controllers\Api\BlacklistController;
 use App\Http\Controllers\Api\InventoryRentalController;
+use App\Http\Controllers\Api\PersonnelActivityController;
 use App\Http\Controllers\Api\ProjectProposalController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\NotificationController;
@@ -76,6 +77,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:personnel.view')->get('/personnel/all', [PersonnelController::class, 'all']);
     Route::middleware('permission:personnel.view')->get('/personnel', [PersonnelController::class, 'index']);
     Route::middleware('permission:personnel.view')->get('/personnel/{personnel}', [PersonnelController::class, 'show']);
+    Route::middleware('permission:personnel.view')->get('/personnel/{personnel}/activity', [PersonnelActivityController::class, 'show']);
     Route::middleware('permission:personnel.create')->post('/personnel', [PersonnelController::class, 'store']);
     Route::middleware('permission:personnel.edit')->put('/personnel/{personnel}', [PersonnelController::class, 'update']);
     Route::middleware('permission:personnel.delete')->delete('/personnel/{personnel}', [PersonnelController::class, 'destroy']);

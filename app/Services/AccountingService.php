@@ -331,7 +331,10 @@ class AccountingService
         $projectData = [];
 
         foreach ($assignments as $assignment) {
-            $project = $assignment->projectDay->project;
+            $project = $assignment->projectDay?->project;
+            if (!$project) {
+                continue; // silinmiş proje/gün
+            }
             $projectId = $project->id;
 
             if (!isset($projectData[$projectId])) {

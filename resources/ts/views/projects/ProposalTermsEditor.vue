@@ -10,7 +10,7 @@ export interface ProposalTermDraft {
 
 const props = defineProps<{
   modelValue: ProposalTermDraft[]
-  readonly?: boolean
+  locked?: boolean
   showReset?: boolean
 }>()
 
@@ -60,14 +60,14 @@ const add = () => {
               density="compact"
               hide-details
               color="success"
-              :disabled="readonly"
+              :disabled="locked"
               @click.stop
             />
             <span :class="['font-weight-medium', { 'text-disabled text-decoration-line-through': !term.is_enabled }]">
               {{ index + 1 }}. {{ term.title || 'Başlıksız' }}
             </span>
             <VSpacer />
-            <template v-if="!readonly">
+            <template v-if="!locked">
               <VBtn icon variant="text" size="x-small" :disabled="index === 0" @click.stop="move(index, -1)"><VIcon icon="tabler-chevron-up" /></VBtn>
               <VBtn icon variant="text" size="x-small" :disabled="index === terms.length - 1" @click.stop="move(index, 1)"><VIcon icon="tabler-chevron-down" /></VBtn>
               <VBtn icon variant="text" size="x-small" color="error" @click.stop="remove(index)"><VIcon icon="tabler-trash" /></VBtn>
@@ -75,13 +75,13 @@ const add = () => {
           </div>
         </VExpansionPanelTitle>
         <VExpansionPanelText>
-          <AppTextField v-model="term.title" label="Başlık" class="mb-3" :readonly="readonly" />
-          <AppTextarea v-model="term.body" label="Metin" rows="4" auto-grow :readonly="readonly" />
+          <AppTextField v-model="term.title" label="Başlık" class="mb-3" :readonly="locked" />
+          <AppTextarea v-model="term.body" label="Metin" rows="4" auto-grow :readonly="locked" />
         </VExpansionPanelText>
       </VExpansionPanel>
     </VExpansionPanels>
 
-    <div v-if="!readonly" class="d-flex gap-2 mt-3">
+    <div v-if="!locked" class="d-flex gap-2 mt-3">
       <VBtn size="small" variant="tonal" prepend-icon="tabler-plus" @click="add">Madde Ekle</VBtn>
       <VBtn v-if="showReset" size="small" variant="text" prepend-icon="tabler-refresh" @click="emit('reset')">
         Standart Şartları Yeniden Yükle

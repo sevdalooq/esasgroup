@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PersonnelQrCard from '@/views/field/PersonnelQrCard.vue'
+import PersonnelActivity from '@/views/personnel/PersonnelActivity.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSwal } from '@/composables/useSwal'
 
@@ -176,6 +177,7 @@ const loading = ref(true)
 const personnel = ref<Personnel | null>(null)
 const authStore = useAuthStore()
 const swal = useSwal()
+const pageTab = ref<'activity' | 'info'>('activity')
 
 // Kara liste
 const blacklistDialog = ref(false)
@@ -484,6 +486,17 @@ onMounted(() => {
         </VCard>
       </VDialog>
 
+      <VTabs v-model="pageTab" class="mb-4">
+        <VTab value="activity"><VIcon icon="tabler-activity" size="18" class="me-1" />Çalışma, Envanter & Ödemeler</VTab>
+        <VTab value="info"><VIcon icon="tabler-id-badge-2" size="18" class="me-1" />Kişisel Bilgiler</VTab>
+      </VTabs>
+
+      <VWindow v-model="pageTab" :touch="false">
+      <VWindowItem value="activity">
+        <PersonnelActivity :personnel-id="personnel.id" />
+      </VWindowItem>
+
+      <VWindowItem value="info">
       <VRow>
         <!-- Kisisel Bilgiler -->
         <VCol cols="12" md="6">
@@ -1288,6 +1301,8 @@ onMounted(() => {
           </VCard>
         </VCol>
       </VRow>
+      </VWindowItem>
+      </VWindow>
     </template>
 
     <!-- Fotograf Modal -->

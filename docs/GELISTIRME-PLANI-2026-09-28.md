@@ -55,7 +55,22 @@ Toplantıda gelen istekler değerlendirildi; her madde bağımsız commit'lenece
 - `GET /personnel/{id}/activity`: gün bazlı çalışma geçmişi (proje, alan, giriş/çıkış, yevmiye, mesai, durum), zimmet/teslim geçmişi + üzerindeki envanter, alacak/ödeme hareketleri ve bakiye, son proje, özet sayaçlar, kara liste kayıtları.
 - Personel detayı sekmeli yapıya geçer: Özet · Çalışma Geçmişi · Envanter · Ödemeler · Kara Liste · Kişisel Bilgiler (mevcut).
 
+## Durum (28.09.2026)
+
+Tüm adımlar geliştirildi ve `main` dalına ayrı commit'ler halinde gönderildi:
+
+| Adım | Commit | Test edilecek yer |
+|---|---|---|
+| 1-3 Teklif kalemleri, şartlar, ön yazı + yapay zeka | `3388949` | Projeler > Yeni Proje (4 adım), proje detayı > Teklif sekmesi > İndir (PDF/DOCX), Ayarlar > Teklif Şartları, Ayarlar > Entegrasyonlar > Yapay Zeka |
+| 4 Saha sorumlusu hatırlatmaları | `86bb69e` | Proje > Düzenle > Saha Sorumlusu; gün kartında saat/sorumlu; Ayarlar > Bildirimler; `php artisan reminders:dispatch`; zil simgesi |
+| 5-6 Kara liste + toplu personel | `daca64d` | Personel detayı > Kara Listeye Al; Personel > Kara Liste (onay); proje günü > Toplu Ekle |
+| 7 Envanter müsaitlik + kiralama | `136f3da` | Proje günü > Envanter Ekle (ürün+adet); yetersizse kiralama diyaloğu; Envanter > Kiralık Envanter |
+| 8 Personel detay geçmişi | (bu commit) | Personel detayı > "Çalışma, Envanter & Ödemeler" sekmesi |
+
 ## Test notları
 - Her adım sonrası `php artisan migrate` çalıştırılmalı (yeni tablolar). `migrate:fresh --seed` ile standart şartlar ve izinler yüklenir; mevcut kurulumda `php artisan db:seed --class=RolesAndPermissionsSeeder` ve `--class=ProposalTermTemplateSeeder`.
 - Hatırlatmaları elle tetiklemek için: `php artisan reminders:dispatch`.
-- Yapay zeka için `.env` veya Ayarlar'da API anahtarı gerekir; anahtar yoksa buton hata mesajı gösterir.
+- Yapay zeka için `.env` (`ANTHROPIC_API_KEY`) veya Ayarlar > Entegrasyonlar'da API anahtarı gerekir; anahtar yoksa buton uyarı gösterir. Varsayılan model `claude-opus-5`.
+- Mevcut yerel/üretim veritabanında sırayla: `php artisan migrate`, `php artisan db:seed --class=RolesAndPermissionsSeeder` (yeni izinler), `php artisan db:seed --class=ProposalTermTemplateSeeder` (standart şartlar), `php artisan db:seed --class=SettingsSeeder` (yeni ayar anahtarları; mevcut değerleri ezmez).
+- Üretimde hatırlatmalar için cron: `* * * * * cd /www/wwwroot/esasgroup.fraudova.com && php artisan schedule:run` (bkz. `deploy/aapanel.sh` başlığı).
+- Eski projelerde teklif kalemi yoksa PDF/DOCX gün bazlı personel/envanter atamalarından özet tablo üretir; şartlar boşsa standart şablonlar kullanılır.

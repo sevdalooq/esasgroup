@@ -28,6 +28,7 @@ interface Personnel {
   iban: string | null
   photo_1: string | null
   is_active: boolean
+  is_blacklisted?: boolean
   group_id: number | null
   group?: Group
   personnel_group_id: number | null

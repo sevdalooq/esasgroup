@@ -5,7 +5,7 @@ import { useSwal } from '@/composables/useSwal'
 const props = defineProps<{
   modelValue: string
   context?: Record<string, any>
-  readonly?: boolean
+  locked?: boolean
 }>()
 
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
@@ -74,7 +74,7 @@ onMounted(checkAi)
       </div>
       <div class="d-flex gap-2 align-center">
         <VBtn
-          v-if="!readonly"
+          v-if="!locked"
           size="small"
           variant="text"
           :prepend-icon="showInstruction ? 'tabler-chevron-up' : 'tabler-adjustments'"
@@ -83,7 +83,7 @@ onMounted(checkAi)
           Ek istek
         </VBtn>
         <VBtn
-          v-if="!readonly"
+          v-if="!locked"
           size="small"
           color="primary"
           variant="tonal"
@@ -117,7 +117,7 @@ onMounted(checkAi)
       label="Ön Yazı"
       rows="10"
       auto-grow
-      :readonly="readonly"
+      :readonly="locked"
       placeholder="Örn. Atatürk Olimpiyat Stadyumu'nda yapılacak konser için güvenlik hizmeti teklifimizdir. Daha önce benzer büyük konserlerde çalıştık, giriş çıkış ve sahne önü yoğunluk yönetiminde tecrübeliyiz..."
     />
     <div class="text-caption text-disabled mt-1">{{ wordCount }} kelime</div>

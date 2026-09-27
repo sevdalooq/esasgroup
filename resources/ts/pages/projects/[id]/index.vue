@@ -39,6 +39,8 @@ interface PersonnelAssignment {
   personnel_id: number
   personnel: Personnel
   approval_status?: 'approved' | 'pending' | 'rejected'
+  payment_method?: string | null
+  notes?: string | null
   daily_wage: number
   overtime_hours: number
   overtime_rate: number
@@ -56,6 +58,8 @@ interface InventoryAssignment {
   inventory: Inventory
   quantity: number
   status: string
+  delivered_at?: string | null
+  returned_at?: string | null
 }
 
 interface Expense {
@@ -84,6 +88,7 @@ interface ProjectDay {
 interface Project {
   id: number
   name: string
+  offer_number?: string | null
   customer_id: number
   customer: { id: number; name: string }
   account_id: number | null
@@ -1704,21 +1709,21 @@ onBeforeUnmount(() => {
         <VCardText>
           <VRow class="mb-2">
             <VCol cols="12" md="6">
-              <AppTextField v-model="proposalHeader.service_name" label="Hizmet Adı" placeholder="Boş bırakılırsa proje adı" :readonly="!canEditProposal" />
+              <AppTextField v-model="proposalHeader.service_name" label="Hizmet Adı" placeholder="Boş bırakılırsa proje adı" :locked="!canEditProposal" />
             </VCol>
             <VCol cols="12" md="6">
-              <AppTextField v-model="proposalHeader.service_location" label="Hizmet Yeri" :readonly="!canEditProposal" />
+              <AppTextField v-model="proposalHeader.service_location" label="Hizmet Yeri" :locked="!canEditProposal" />
             </VCol>
           </VRow>
 
           <h6 class="text-h6 mb-2">1. Teklif Kalemleri</h6>
-          <ProposalItemsEditor v-model="proposalSections" :readonly="!canEditProposal" :default-days="project.days.length" />
+          <ProposalItemsEditor v-model="proposalSections" :locked="!canEditProposal" :default-days="project.days.length" />
 
           <VDivider class="my-6" />
           <h6 class="text-h6 mb-2">2. Ön Yazı</h6>
           <CoverLetterEditor
             v-model="proposalHeader.cover_letter"
-            :readonly="!canEditProposal"
+            :locked="!canEditProposal"
             :context="{
               project_name: project.name,
               customer_name: project.customer.name,
@@ -1731,7 +1736,7 @@ onBeforeUnmount(() => {
 
           <VDivider class="my-6" />
           <h6 class="text-h6 mb-2">3. Teklif Şartları ve Koşulları</h6>
-          <ProposalTermsEditor v-model="proposalTerms" :readonly="!canEditProposal" show-reset @reset="resetProposalTerms" />
+          <ProposalTermsEditor v-model="proposalTerms" :locked="!canEditProposal" show-reset @reset="resetProposalTerms" />
 
           <div v-if="canEditProposal" class="d-flex justify-end mt-6">
             <VBtn color="primary" prepend-icon="tabler-device-floppy" :loading="proposalSaving" :disabled="!proposalDirty" @click="saveProposal">
