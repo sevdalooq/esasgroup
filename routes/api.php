@@ -20,6 +20,9 @@ use App\Http\Controllers\Api\ExpenseApprovalController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\ProposalController;
+use App\Http\Controllers\Api\ProposalTermTemplateController;
+use App\Http\Controllers\Api\AiController;
+use App\Http\Controllers\Api\ProjectProposalController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\LiveController;
@@ -125,6 +128,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Management - Users (Kullanıcı Yönetimi)
     Route::middleware('permission:users.view')->get('/users/all', [UserController::class, 'all']);
+    Route::middleware('permission:projects.view')->get('/users/supervisors', [UserController::class, 'supervisors']);
     Route::middleware('permission:users.view')->get('/users', [UserController::class, 'index']);
     Route::middleware('permission:users.view')->get('/users/{user}', [UserController::class, 'show']);
     Route::middleware('permission:users.view')->get('/users/{user}/permissions', [UserController::class, 'getPermissions']);
@@ -195,6 +199,24 @@ Route::middleware('auth:sanctum')->group(function () {
     // Proposals (Teklif Formu)
     Route::middleware('permission:projects.view')->get('/projects/{project}/proposal', [ProposalController::class, 'generate']);
     Route::middleware('permission:projects.view')->get('/projects/{project}/proposal/preview', [ProposalController::class, 'preview']);
+
+    // Teklif içeriği: ön yazı, kalemler, şartlar
+    Route::middleware('permission:projects.view')->get('/projects/{project}/proposal-content', [ProjectProposalController::class, 'show']);
+    Route::middleware('permission:projects.edit')->put('/projects/{project}/proposal-sections', [ProjectProposalController::class, 'syncSections']);
+    Route::middleware('permission:projects.edit')->put('/projects/{project}/proposal-terms', [ProjectProposalController::class, 'syncTerms']);
+    Route::middleware('permission:projects.edit')->post('/projects/{project}/proposal-terms/reset', [ProjectProposalController::class, 'resetTerms']);
+
+    // Yapay zeka (ön yazı iyileştirme)
+    Route::middleware('permission:projects.create|projects.edit')->get('/ai/status', [AiController::class, 'status']);
+    Route::middleware('permission:projects.create|projects.edit')->post('/ai/cover-letter/improve', [AiController::class, 'improveCoverLetter']);
+
+    // Standart teklif şartları (Ayarlar)
+    Route::middleware('permission:projects.create|projects.edit|settings.view')->get('/proposal-term-templates/active', [ProposalTermTemplateController::class, 'active']);
+    Route::middleware('permission:settings.view')->get('/proposal-term-templates', [ProposalTermTemplateController::class, 'index']);
+    Route::middleware('permission:settings.edit')->post('/proposal-term-templates', [ProposalTermTemplateController::class, 'store']);
+    Route::middleware('permission:settings.edit')->post('/proposal-term-templates/reorder', [ProposalTermTemplateController::class, 'reorder']);
+    Route::middleware('permission:settings.edit')->put('/proposal-term-templates/{template}', [ProposalTermTemplateController::class, 'update']);
+    Route::middleware('permission:settings.edit')->delete('/proposal-term-templates/{template}', [ProposalTermTemplateController::class, 'destroy']);
 
     // [FIELD ROUTES] Saha / QR işlemleri (FieldController)
     Route::middleware('permission:field.access')->get('/field/today', [FieldController::class, 'today']);

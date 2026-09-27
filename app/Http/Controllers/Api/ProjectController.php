@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\ProjectDay;
+use App\Models\ProjectProposalTerm;
+use App\Notifications\SupervisorAssignedNotification;
 use App\Services\AccountingService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -56,9 +58,10 @@ class ProjectController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'customer_id' => 'required|exists:customers,id',
             'account_id' => 'nullable|exists:accounts,id',
+            'supervisor_id' => 'nullable|exists:users,id',
             'name' => 'required|string|max:255',
             'offer_number' => 'nullable|string|max:50',
             'start_date' => 'required|date',
@@ -69,7 +72,17 @@ class ProjectController extends Controller
             'venue_address' => 'nullable|string|max:255',
             'venue_lat' => 'nullable|numeric|between:-90,90',
             'venue_lng' => 'nullable|numeric|between:-180,180',
-        ]);
+            'terms' => 'nullable|array',
+        ], ProjectProposalController::headerRules(), ProjectProposalController::sectionRules(), [
+            'terms.*.template_id' => 'nullable|integer',
+            'terms.*.title' => 'required|string|max:255',
+            'terms.*.body' => 'required|string|max:5000',
+            'terms.*.is_enabled' => 'nullable|boolean',
+        ]));
+
+        $sections = $validated['sections'] ?? [];
+        $terms = $validated['terms'] ?? null;
+        unset($validated['sections'], $validated['terms']);
 
         DB::beginTransaction();
         try {
@@ -83,6 +96,15 @@ class ProjectController extends Controller
 
             $project = Project::create($validated);
 
+            // Teklif kalemleri ve şartlar
+            ProjectProposalController::saveSections($project, $sections);
+            if (is_array($terms)) {
+                ProjectProposalController::saveTerms($project, $terms);
+            } else {
+                ProjectProposalTerm::seedFromTemplates($project);
+            }
+            ProjectProposalController::refreshOfferPrice($project);
+
             // Başlangıç ve bitiş tarihi arasındaki günleri oluştur
             $startDate = Carbon::parse($validated['start_date']);
             $endDate = Carbon::parse($validated['end_date']);
@@ -91,12 +113,18 @@ class ProjectController extends Controller
                 $project->days()->create([
                     'date' => $startDate->format('Y-m-d'),
                     'status' => 'pending',
+                    'supervisor_id' => $project->supervisor_id,
                 ]);
                 $startDate->addDay();
             }
 
             DB::commit();
-            return response()->json($project->load(['customer', 'days']), 201);
+
+            if ($project->supervisor_id) {
+                $project->supervisor?->notify(new SupervisorAssignedNotification($project));
+            }
+
+            return response()->json($project->load(['customer', 'days', 'supervisor:id,name']), 201);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['message' => 'Proje olusturulamadi: ' . $e->getMessage()], 500);
@@ -107,6 +135,9 @@ class ProjectController extends Controller
     {
         $project->load([
             'customer',
+            'supervisor:id,name,phone,email',
+            'proposalSections.items',
+            'proposalTerms',
             'days' => function ($query) {
                 $query->orderBy('date');
             },
@@ -124,6 +155,7 @@ class ProjectController extends Controller
             'total_inventory_assignments' => $project->days->sum(fn($d) => $d->inventoryAssignments->count()),
             'total_expenses' => $project->days->sum(fn($d) => $d->expenses->sum('amount')),
             'estimated_personnel_cost' => $project->days->sum(fn($d) => $d->personnelAssignments->sum('daily_wage')),
+            'proposal_total' => $project->proposalTotal(),
         ];
 
         return response()->json($project);
@@ -142,6 +174,9 @@ class ProjectController extends Controller
         $rules = [
             'customer_id' => 'required|exists:customers,id',
             'account_id' => 'nullable|exists:accounts,id',
+            'supervisor_id' => 'nullable|exists:users,id',
+            'service_location' => 'nullable|string|max:255',
+            'service_name' => 'nullable|string|max:255',
             'name' => 'required|string|max:255',
             'offer_number' => 'nullable|string|max:50',
             'delivery_type' => 'nullable|string|max:50',
@@ -192,10 +227,22 @@ class ProjectController extends Controller
                 }
             }
 
+            $oldSupervisor = $project->supervisor_id;
             $project->update($validated);
+
+            // Saha sorumlusu değiştiyse: supervisor'sız (veya eski sorumluya bağlı) günlere yay
+            if (array_key_exists('supervisor_id', $validated) && $validated['supervisor_id'] != $oldSupervisor) {
+                $project->days()
+                    ->where(fn ($q) => $q->whereNull('supervisor_id')->orWhere('supervisor_id', $oldSupervisor))
+                    ->update(['supervisor_id' => $validated['supervisor_id']]);
+            }
             DB::commit();
 
-            return response()->json($project->load(['customer', 'days']));
+            if (array_key_exists('supervisor_id', $validated) && $validated['supervisor_id'] && $validated['supervisor_id'] != $oldSupervisor) {
+                $project->supervisor?->notify(new SupervisorAssignedNotification($project));
+            }
+
+            return response()->json($project->load(['customer', 'days', 'supervisor:id,name']));
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['message' => 'Guncelleme basarisiz: ' . $e->getMessage()], 500);
@@ -247,7 +294,7 @@ class ProjectController extends Controller
 
         if (in_array($newStatus, $adminOnlyStatuses)) {
             // Kullanıcının projects.approve yetkisi var mı kontrol et
-            if (!$user->hasPermissionTo('projects.approve')) {
+            if (!$user->hasPermission('projects.approve')) {
                 return response()->json([
                     'message' => 'Bu duruma gecis icin yonetici yetkisi gereklidir.'
                 ], 403);

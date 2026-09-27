@@ -4,779 +4,442 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Project;
+use App\Models\ProposalTermTemplate;
 use App\Models\Setting;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use PhpOffice\PhpWord\PhpWord;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\IOFactory;
+use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\Shared\Converter;
 use PhpOffice\PhpWord\SimpleType\Jc;
-use PhpOffice\PhpWord\TemplateProcessor;
 
+/**
+ * Teklif çıktısı (PDF / DOCX).
+ * Yapı: ön yazı → bilgi bloğu → kategori tabloları (Personel Hizmeti, Bariyer Kiralama...) → genel toplam → şartlar → imza.
+ * Kalem girilmemiş eski projelerde tablo, gün bazlı personel/envanter atamalarından türetilir.
+ */
 class ProposalController extends Controller
 {
-    /**
-     * Teklif formu oluştur (PDF veya DOCX)
-     */
+    private const MONTHS = [1 => 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
     public function generate(Request $request, Project $project)
     {
         $format = $request->get('format', 'pdf');
-        $showTotals = $request->boolean('show_totals', true);
-
         $data = $this->prepareProposalData($project);
-        $data['show_totals'] = $showTotals;
 
-        if ($format === 'docx') {
-            return $this->generateDocx($data, $project);
-        }
-
-        return $this->generatePdf($data, $project);
+        return $format === 'docx' ? $this->generateDocx($data, $project) : $this->generatePdf($data, $project);
     }
 
-    /**
-     * Teklif ön izleme (HTML)
-     */
     public function preview(Project $project): JsonResponse
     {
-        $data = $this->prepareProposalData($project);
-
-        return response()->json($data);
+        return response()->json($this->prepareProposalData($project));
     }
 
-    /**
-     * Teklif verilerini hazırla
-     */
+    // ------------------------------------------------------------------ veri
+
     private function prepareProposalData(Project $project): array
     {
-        $project->load([
-            'customer',
-            'days.personnelAssignments.personnel',
-            'days.inventoryAssignments.inventory',
-        ]);
+        $project->load(['customer.contacts', 'proposalSections.items', 'proposalTerms']);
+        $contact = $project->customer->contacts->firstWhere('is_primary', true) ?? $project->customer->contacts->first();
 
-        // Ayarları al
-        $companySettings = Setting::getByGroup('company');
+        $company = Setting::getByGroup('company');
         $proposalSettings = Setting::getByGroup('proposal');
-        $financeSettings = Setting::getByGroup('finance');
+        $finance = Setting::getByGroup('finance');
 
-        // Maliyet hesapla
-        $costs = $this->calculateCosts($project);
+        $sections = $this->buildSections($project);
+        $subtotal = array_sum(array_column($sections, 'total'));
+        $taxRate = (float) ($finance['default_tax_rate'] ?? 20);
+        $taxAmount = round($subtotal * $taxRate / 100, 2);
 
-        // Hizmet bazlı özet hesapla
-        $serviceSummary = $this->calculateServiceSummary($project);
-
-        // Geçerlilik tarihi
         $validityDays = (int) ($proposalSettings['proposal_validity_days'] ?? 30);
-        $validUntil = now()->addDays($validityDays);
 
-        // Tarih formatları - Türkçe ay isimleriyle
-        $months = [
-            1 => 'Ocak',
-            2 => 'Şubat',
-            3 => 'Mart',
-            4 => 'Nisan',
-            5 => 'Mayıs',
-            6 => 'Haziran',
-            7 => 'Temmuz',
-            8 => 'Ağustos',
-            9 => 'Eylül',
-            10 => 'Ekim',
-            11 => 'Kasım',
-            12 => 'Aralık'
-        ];
+        $logoPath = null;
+        if (!empty($company['company_logo']) && Storage::disk('public')->exists($company['company_logo'])) {
+            $logoPath = Storage::disk('public')->path($company['company_logo']);
+        }
 
-        $startDate = $project->start_date;
-        $endDate = $project->end_date;
-
-        $formattedStartDate = $startDate->day . ' ' . $months[$startDate->month] . ' ' . $startDate->year;
-        $formattedEndDate = $endDate->day . ' ' . $months[$endDate->month] . ' ' . $endDate->year;
+        $location = $project->service_location ?: ($project->venue_address ?: '');
+        $start = $this->formatLongDate($project->start_date);
+        $end = $this->formatLongDate($project->end_date);
+        $dateRange = $project->start_date->eq($project->end_date) ? $start : $start.' – '.$end;
 
         return [
             'company' => [
-                'name' => $companySettings['company_name'] ?? 'ESAS GROUP DANIŞMANLIK A.Ş.',
-                'address' => $companySettings['company_address'] ?? 'Ayşe Hatun Çeşme Sok. No:5 K:6 D:14 PARLAK PLAZA',
-                'phone' => $companySettings['company_phone'] ?? '0 850 441 37 27',
-                'email' => $companySettings['company_email'] ?? 'info@esasgroup.com.tr',
-                'website' => $companySettings['company_website'] ?? 'www.esasgroup.com.tr',
-                'logo' => $companySettings['company_logo'] ?? null,
-                'tax_office' => $companySettings['company_tax_office'] ?? '',
-                'tax_number' => $companySettings['company_tax_number'] ?? '',
-            ],
-            'proposal' => [
-                'header' => $proposalSettings['proposal_header'] ?? 'PROJE TEKLIF FORMU',
-                'footer' => $proposalSettings['proposal_footer'] ?? '',
-                'terms' => $proposalSettings['proposal_terms_and_conditions'] ?? '',
-                'show_daily_details' => $proposalSettings['proposal_show_daily_details'] ?? true,
+                'name' => $company['company_name'] ?? 'ESAS GROUP DANIŞMANLIK A.Ş.',
+                'address' => $company['company_address'] ?? '',
+                'phone' => $company['company_phone'] ?? '',
+                'email' => $company['company_email'] ?? '',
+                'website' => $company['company_website'] ?? 'www.esasgroup.com.tr',
+                'logo_path' => $logoPath,
             ],
             'finance' => [
-                'tax_rate' => (float) ($financeSettings['default_tax_rate'] ?? 20),
-                'currency' => $financeSettings['default_currency'] ?? 'TRY',
-                'symbol' => $financeSettings['currency_symbol'] ?? '₺',
+                'tax_rate' => $taxRate,
+                'symbol' => $finance['currency_symbol'] ?? '₺',
             ],
             'project' => [
                 'id' => $project->id,
                 'name' => $project->name,
                 'offer_number' => $project->offer_number,
-                'delivery_type' => $project->delivery_type,
-                'start_date' => $formattedStartDate,
-                'end_date' => $formattedEndDate,
-                'total_days' => $project->days->count(),
-                'notes' => $project->notes,
-                'location' => $project->location ?? $project->notes ?? '',
-                'service_name' => $project->service_name ?? 'Bireysel Gözlem ve Kontrol Sorumlusu',
+                'location' => $location,
+                'service_name' => $project->service_name ?: $project->name,
+                'start_date' => $start,
+                'end_date' => $end,
+                'date_range' => $dateRange,
+                'total_days' => $project->start_date->diffInDays($project->end_date) + 1,
             ],
             'customer' => [
                 'name' => $project->customer->name,
-                'contact_person' => $project->customer->contact_person ?? $project->customer->name,
+                'contact_person' => $contact?->name ?: '',
                 'address' => $project->customer->address ?? '',
                 'phone' => $project->customer->phone ?? '',
                 'email' => $project->customer->email ?? '',
-                'tax_office' => $project->customer->tax_office ?? '',
-                'tax_number' => $project->customer->tax_number ?? '',
             ],
-            'costs' => $costs,
-            'service_summary' => $serviceSummary,
-            'days' => $this->prepareDailyDetails($project),
+            'cover_paragraphs' => $this->coverParagraphs($project, $company['company_name'] ?? 'ESAS GROUP DANIŞMANLIK A.Ş.', $location, $dateRange),
+            'sections' => $sections,
+            'terms' => $this->buildTerms($project),
+            'totals' => [
+                'subtotal' => $subtotal,
+                'tax_rate' => $taxRate,
+                'tax_amount' => $taxAmount,
+                'grand_total' => $subtotal + $taxAmount,
+            ],
             'generated_at' => now()->format('d.m.Y'),
-            'valid_until' => $validUntil->format('d.m.Y'),
-            'proposal_no' => $project->offer_number ?? ('TKL-' . $project->id . '-' . now()->format('Ymd')),
+            'valid_until' => now()->addDays($validityDays)->format('d.m.Y'),
+            'proposal_no' => $project->offer_number ?: ('TKL-'.$project->id),
+            'footer_note' => $proposalSettings['proposal_footer'] ?? '',
         ];
     }
 
-    /**
-     * Hizmet bazlı özet hesapla (Personel Hizmeti ve Kiralama Hizmeti)
-     */
-    private function calculateServiceSummary(Project $project): array
+    /** Ön yazı: projede yazılmışsa o, yoksa standart metin */
+    private function coverParagraphs(Project $project, string $companyName, string $location, string $dateRange): array
     {
-        $personnelService = [
-            'total_person_days' => 0,
-            'daily_rate' => 0,
-            'total_cost' => 0,
-            'person_count' => 0,
-        ];
-
-        $rentalService = [
-            'items' => [],
-            'total_cost' => 0,
-        ];
-
-        $inventoryUsage = [];
-        $maxPersonnelPerDay = 0;
-
-        foreach ($project->days as $day) {
-            $dayPersonnelCount = 0;
-
-            // Personel hizmeti - toplam adam/gün ve maliyet
-            foreach ($day->personnelAssignments as $assignment) {
-                $personnelService['total_person_days']++;
-                $personnelService['total_cost'] += (float) $assignment->daily_wage;
-                $dayPersonnelCount++;
-            }
-
-            // En fazla personel sayısını bul
-            if ($dayPersonnelCount > $maxPersonnelPerDay) {
-                $maxPersonnelPerDay = $dayPersonnelCount;
-            }
-
-            // Kiralama hizmeti - ürün bazlı gruplama
-            foreach ($day->inventoryAssignments as $assignment) {
-                if ($assignment->inventory && $assignment->inventory->type === 'rental') {
-                    $invId = $assignment->inventory->id;
-                    $rate = (float) $assignment->inventory->daily_rate;
-                    $quantity = $assignment->quantity;
-
-                    if (!isset($inventoryUsage[$invId])) {
-                        $inventoryUsage[$invId] = [
-                            'name' => $assignment->inventory->name,
-                            'unit' => $assignment->inventory->unit ?? 'adet',
-                            'unit_price' => $rate,
-                            'quantity' => 0,
-                            'days' => 0,
-                            'total_cost' => 0,
-                        ];
-                    }
-
-                    $inventoryUsage[$invId]['quantity'] += $quantity;
-                    $inventoryUsage[$invId]['days']++;
-                    $inventoryUsage[$invId]['total_cost'] += $rate * $quantity;
-                }
-            }
+        $text = trim((string) $project->cover_letter);
+        if ($text !== '') {
+            return array_values(array_filter(array_map('trim', preg_split("/\n\s*\n|\r\n\s*\r\n/", $text))));
         }
 
-        // Personel günlük ortalama ücreti hesapla
-        if ($personnelService['total_person_days'] > 0) {
-            $personnelService['daily_rate'] = $personnelService['total_cost'] / $personnelService['total_person_days'];
-        }
-
-        // En yüksek günlük personel sayısını kaydet
-        $personnelService['person_count'] = $maxPersonnelPerDay > 0 ? $maxPersonnelPerDay : 1;
-
-        // Kiralama özeti
-        foreach ($inventoryUsage as $item) {
-            $rentalService['items'][] = $item;
-            $rentalService['total_cost'] += $item['total_cost'];
-        }
+        $where = $location !== '' ? $location.'\'de ' : '';
 
         return [
-            'personnel' => $personnelService,
-            'rental' => $rentalService,
+            "{$dateRange} tarihlerinde, {$where}düzenlenecek olan \"{$project->name}\" etkinliği kapsamında tarafımıza iletilen talebinize istinaden, kurumsal hizmet anlayışımız ve deneyimli kadromuzla özel olarak hazırladığımız teklif dosyasını takdim ederiz.",
+            "{$companyName} olarak; etkinlik güvenliği ve operasyon yönetimi alanında, yalnızca sahada bulunmakla kalmayıp temsil niteliğini de üstlenen personel yapımızla, organizasyonunuza değer katmayı amaçlıyoruz.",
+            'Sunulan bu çalışma, minimum personel yaklaşımından ziyade; doğru konumlandırılmış ekipler ile risk oluşmadan kontrol sağlama prensibi üzerine kurgulanmıştır.',
+            'İş birliğiniz için teşekkür eder, huzurlu ve başarılı bir organizasyon dileriz.',
         ];
     }
 
-    /**
-     * Günlük detayları hazırla
-     */
-    private function prepareDailyDetails(Project $project): array
+    /** Kalem tabloları; kalem yoksa günlük atamalardan türet */
+    private function buildSections(Project $project): array
     {
-        $days = [];
+        if ($project->proposalSections->isNotEmpty()) {
+            return $project->proposalSections->map(function ($section) {
+                $items = $section->items->map(fn ($it) => [
+                    'description' => $it->description,
+                    'note' => $it->note,
+                    'duration_label' => $it->duration_label,
+                    'quantity' => (float) $it->quantity,
+                    'days' => (int) $it->days,
+                    'unit_price' => $it->unit_price !== null ? (float) $it->unit_price : null,
+                    'total_price' => (float) $it->total_price,
+                ])->values()->all();
 
+                return [
+                    'title' => $section->title,
+                    'unit_label' => $section->unit_label ?: 'Kişi',
+                    'show_duration' => (bool) $section->show_duration,
+                    'show_days' => (bool) $section->show_days,
+                    'show_unit_price' => (bool) $section->show_unit_price,
+                    'items' => $items,
+                    'total' => array_sum(array_column($items, 'total_price')),
+                ];
+            })->values()->all();
+        }
+
+        // Eski projeler: atamalardan özet
+        $project->load(['days.personnelAssignments', 'days.inventoryAssignments.inventory']);
+        $sections = [];
+
+        $byWage = [];
         foreach ($project->days as $day) {
-            $personnelCost = 0;
-            $inventoryCost = 0;
-            $personnel = [];
-            $inventory = [];
-
-            foreach ($day->personnelAssignments as $assignment) {
-                $wage = (float) $assignment->daily_wage;
-                $personnelCost += $wage;
-                $personnel[] = [
-                    'name' => $assignment->personnel->first_name . ' ' . $assignment->personnel->last_name,
-                    'wage' => $wage,
+            foreach ($day->personnelAssignments as $a) {
+                $key = (string) $a->daily_wage;
+                $byWage[$key] = ($byWage[$key] ?? 0) + 1;
+            }
+        }
+        if ($byWage) {
+            $items = [];
+            $dayCount = max($project->days->count(), 1);
+            foreach ($byWage as $wage => $personDays) {
+                $persons = (int) ceil($personDays / $dayCount);
+                $items[] = [
+                    'description' => 'Güvenlik Personeli',
+                    'note' => null,
+                    'duration_label' => null,
+                    'quantity' => $persons,
+                    'days' => $dayCount,
+                    'unit_price' => (float) $wage,
+                    'total_price' => (float) $wage * $personDays,
                 ];
             }
-
-            foreach ($day->inventoryAssignments as $assignment) {
-                if ($assignment->inventory && $assignment->inventory->type === 'rental') {
-                    $rate = (float) $assignment->inventory->daily_rate * $assignment->quantity;
-                    $inventoryCost += $rate;
-                    $inventory[] = [
-                        'name' => $assignment->inventory->name,
-                        'quantity' => $assignment->quantity,
-                        'rate' => $rate,
-                    ];
-                }
-            }
-
-            $days[] = [
-                'date' => $day->date->format('d.m.Y'),
-                'day_name' => $day->date->translatedFormat('l'),
-                'personnel' => $personnel,
-                'inventory' => $inventory,
-                'personnel_cost' => $personnelCost,
-                'inventory_cost' => $inventoryCost,
-                'total_cost' => $personnelCost + $inventoryCost,
+            $sections[] = [
+                'title' => 'Personel Hizmeti', 'unit_label' => 'Kişi',
+                'show_duration' => false, 'show_days' => true, 'show_unit_price' => true,
+                'items' => $items, 'total' => array_sum(array_column($items, 'total_price')),
             ];
         }
 
-        return $days;
-    }
-
-    /**
-     * Maliyet hesapla
-     */
-    private function calculateCosts(Project $project): array
-    {
-        $personnelCost = 0;
-        $inventoryCost = 0;
-
+        $rental = [];
         foreach ($project->days as $day) {
-            $personnelCost += $day->personnelAssignments->sum('daily_wage');
-
-            foreach ($day->inventoryAssignments as $assignment) {
-                if ($assignment->inventory && $assignment->inventory->type === 'rental') {
-                    $inventoryCost += $assignment->inventory->daily_rate * $assignment->quantity;
+            foreach ($day->inventoryAssignments as $ia) {
+                if (!$ia->inventory || $ia->inventory->type !== 'rental') {
+                    continue;
                 }
+                $name = $ia->inventory->name;
+                $rental[$name] ??= ['qty' => 0, 'days' => 0, 'rate' => (float) $ia->inventory->daily_rate, 'total' => 0];
+                $rental[$name]['qty'] = max($rental[$name]['qty'], (int) $ia->quantity);
+                $rental[$name]['days']++;
+                $rental[$name]['total'] += (float) $ia->inventory->daily_rate * $ia->quantity;
             }
         }
+        if ($rental) {
+            $items = [];
+            foreach ($rental as $name => $r) {
+                $items[] = [
+                    'description' => $name, 'note' => null, 'duration_label' => null,
+                    'quantity' => $r['qty'], 'days' => $r['days'], 'unit_price' => $r['rate'], 'total_price' => $r['total'],
+                ];
+            }
+            $sections[] = [
+                'title' => 'Malzeme Kiralama Hizmeti', 'unit_label' => 'Adet',
+                'show_duration' => false, 'show_days' => true, 'show_unit_price' => true,
+                'items' => $items, 'total' => array_sum(array_column($items, 'total_price')),
+            ];
+        }
 
-        $subtotal = $personnelCost + $inventoryCost;
-        $taxRate = (float) (Setting::get('default_tax_rate', 20));
-        $taxAmount = $subtotal * ($taxRate / 100);
-        $total = $subtotal + $taxAmount;
-
-        $offerPrice = (float) $project->offer_price;
-        $profit = $offerPrice > 0 ? $offerPrice - $subtotal : 0;
-
-        return [
-            'personnel_cost' => $personnelCost,
-            'inventory_cost' => $inventoryCost,
-            'subtotal' => $subtotal,
-            'tax_rate' => $taxRate,
-            'tax_amount' => $taxAmount,
-            'total' => $total,
-            'offer_price' => $offerPrice,
-            'profit' => $profit,
-        ];
+        return $sections;
     }
 
-    /**
-     * PDF oluştur
-     */
+    private function buildTerms(Project $project): array
+    {
+        $terms = $project->proposalTerms->where('is_enabled', true)->values();
+        if ($terms->isEmpty() && $project->proposalTerms->isEmpty()) {
+            $terms = ProposalTermTemplate::active()->get();
+        }
+
+        return $terms->map(fn ($t) => ['title' => $t->title, 'body' => $t->body])->values()->all();
+    }
+
+    private function formatLongDate($date): string
+    {
+        return $date->day.' '.self::MONTHS[$date->month].' '.$date->year;
+    }
+
+    public static function money(float $amount, string $symbol = '₺'): string
+    {
+        return $symbol.number_format($amount, 2, ',', '.');
+    }
+
+    public static function qty(float $q): string
+    {
+        return fmod($q, 1.0) === 0.0 ? (string) (int) $q : number_format($q, 2, ',', '.');
+    }
+
+    // ------------------------------------------------------------------ PDF
+
     private function generatePdf(array $data, Project $project)
     {
-        $pdf = Pdf::loadView('proposals.template', $data);
-        $pdf->setPaper('a4', 'portrait');
-
-        $filename = 'Teklif_' . ($data['proposal_no'] ?? $project->id) . '_' . now()->format('Ymd') . '.pdf';
+        $pdf = Pdf::loadView('proposals.template', $data)->setPaper('a4', 'portrait');
+        $filename = 'Teklif_'.$data['proposal_no'].'_'.now()->format('Ymd').'.pdf';
 
         return $pdf->download($filename);
     }
 
-    /**
-     * DOCX dosyası oluştur (template'den) - hem DOCX hem PDF için ortak
-     */
-    private function buildDocxFile(array $data, Project $project): ?string
-    {
-        $templatePath = resource_path('templates/teklif-sablonu.docx');
-        if (!file_exists($templatePath)) {
-            return null;
-        }
+    // ------------------------------------------------------------------ DOCX
 
-        if (!file_exists(storage_path('app/temp'))) {
-            mkdir(storage_path('app/temp'), 0755, true);
-        }
-
-        $tempPath = storage_path('app/temp/temp_' . uniqid() . '.docx');
-
-        $template = new TemplateProcessor($templatePath);
-
-        // Şirket bilgileri
-        $template->setValue('company_name', $data['company']['name']);
-
-        // Tarih
-        $template->setValue('generated_at', $data['generated_at']);
-
-        // Müşteri bilgileri
-        $template->setValue('customer_name', $data['customer']['name']);
-        $template->setValue('customer_contact', $data['customer']['contact_person']);
-
-        // Proje bilgileri
-        $template->setValue('project_name', $data['project']['name']);
-        $template->setValue('project_location', $data['project']['location']);
-        $template->setValue('project_start_date', $data['project']['start_date']);
-        $template->setValue('project_end_date', $data['project']['end_date']);
-        $template->setValue('service_name', $data['project']['service_name']);
-        $template->setValue('total_days', $data['project']['total_days']);
-
-        // Hizmet tablosu - toplamları göster/gizle
-        $showTotals = $data['show_totals'] ?? true;
-
-        $template->setValue('person_count', $data['service_summary']['personnel']['person_count']);
-        $template->setValue('daily_rate', $showTotals ? '₺' . number_format($data['service_summary']['personnel']['daily_rate'], 2, ',', '.') : '');
-        $template->setValue('subtotal', $showTotals ? '₺' . number_format($data['costs']['subtotal'], 2, ',', '.') : '');
-
-        // Personel görevlendirme planı - günlük detaylar (dinamik satır sayısı)
-        $days = $data['days'];
-        $dayCount = count($days);
-
-        if ($dayCount > 0) {
-            $template->cloneRow('day_label', $dayCount);
-
-            foreach ($days as $i => $day) {
-                $rowIndex = $i + 1;
-                $personnelCount = count($day['personnel']);
-
-                $template->setValue("day_label#{$rowIndex}", "{$rowIndex}.Gün");
-                $template->setValue("day_personnel#{$rowIndex}", "{$personnelCount} Bay Personel");
-                $template->setValue("day_date#{$rowIndex}", $day['date']);
-                $template->setValue("day_cost#{$rowIndex}", $showTotals ? '₺' . number_format($day['personnel_cost'], 2, ',', '.') : '');
-            }
-        }
-
-        $template->setValue('personnel_total', $showTotals ? '₺' . number_format($data['costs']['personnel_cost'], 2, ',', '.') : '');
-        $template->setValue('proposal_no', $data['proposal_no']);
-
-        $template->saveAs($tempPath);
-
-        return $tempPath;
-    }
-
-    /**
-     * DOCX oluştur
-     */
     private function generateDocx(array $data, Project $project)
     {
-        $tempPath = $this->buildDocxFile($data, $project);
-
-        if ($tempPath && file_exists($tempPath)) {
-            $filename = 'Teklif_' . ($data['proposal_no'] ?? $project->id) . '_' . now()->format('Ymd') . '.docx';
-
-            return response()->download($tempPath, $filename)->deleteFileAfterSend(true);
-        }
-
+        $symbol = $data['finance']['symbol'];
         $phpWord = new PhpWord();
-
-        // Varsayılan font
         $phpWord->setDefaultFontName('Calibri');
         $phpWord->setDefaultFontSize(10);
+        $phpWord->getSettings()->setThemeFontLang(new \PhpOffice\PhpWord\Style\Language('tr-TR'));
 
-        // Stil tanımları
-        $phpWord->addFontStyle('companyNameStyle', ['bold' => true, 'size' => 10, 'color' => 'CC0000']);
-        $phpWord->addFontStyle('headerStyle', ['bold' => true, 'size' => 28, 'color' => 'CC0000']);
-        $phpWord->addFontStyle('subHeaderStyle', ['size' => 12, 'color' => '666666']);
-        $phpWord->addFontStyle('sectionTitleStyle', ['bold' => true, 'size' => 10, 'color' => 'CC0000']);
-        $phpWord->addFontStyle('normalStyle', ['size' => 10]);
-        $phpWord->addFontStyle('boldStyle', ['bold' => true, 'size' => 10]);
-        $phpWord->addFontStyle('smallStyle', ['size' => 9]);
-        $phpWord->addFontStyle('italicStyle', ['size' => 9, 'italic' => true]);
-        $phpWord->addFontStyle('linkStyle', ['size' => 9, 'color' => '0066CC']);
+        $phpWord->addFontStyle('brand', ['bold' => true, 'size' => 24, 'color' => 'BF272E']);
+        $phpWord->addFontStyle('brandSub', ['size' => 11, 'color' => '666666']);
+        $phpWord->addFontStyle('companyName', ['bold' => true, 'size' => 10, 'color' => 'BF272E']);
+        $phpWord->addFontStyle('small', ['size' => 9]);
+        $phpWord->addFontStyle('normal', ['size' => 10]);
+        $phpWord->addFontStyle('bold', ['bold' => true, 'size' => 10]);
+        $phpWord->addFontStyle('sectionTitle', ['bold' => true, 'size' => 11, 'color' => 'BF272E']);
+        $phpWord->addFontStyle('th', ['bold' => true, 'size' => 9, 'color' => 'FFFFFF']);
+        $phpWord->addFontStyle('td', ['size' => 9.5]);
+        $phpWord->addFontStyle('tdNote', ['size' => 8.5, 'italic' => true, 'color' => '555555']);
+        $phpWord->addFontStyle('italicNote', ['size' => 9, 'italic' => true]);
+        $phpWord->addParagraphStyle('right', ['alignment' => Jc::END]);
+        $phpWord->addParagraphStyle('center', ['alignment' => Jc::CENTER]);
+        $phpWord->addParagraphStyle('justify', ['alignment' => Jc::BOTH, 'spaceAfter' => 160, 'lineHeight' => 1.3]);
+        $phpWord->addParagraphStyle('cell', ['spaceAfter' => 0, 'spaceBefore' => 0]);
+        $phpWord->addParagraphStyle('cellCenter', ['alignment' => Jc::CENTER, 'spaceAfter' => 0, 'spaceBefore' => 0]);
+        $phpWord->addParagraphStyle('cellRight', ['alignment' => Jc::END, 'spaceAfter' => 0, 'spaceBefore' => 0]);
+        $phpWord->addTableStyle('grid', ['borderSize' => 4, 'borderColor' => '999999', 'cellMargin' => 60, 'width' => 100 * 50, 'unit' => 'pct']);
 
-        $phpWord->addParagraphStyle('rightStyle', ['alignment' => Jc::END]);
-        $phpWord->addParagraphStyle('centerStyle', ['alignment' => Jc::CENTER]);
-        $phpWord->addParagraphStyle('justifyStyle', ['alignment' => Jc::BOTH, 'spaceAfter' => 200]);
+        $section = $phpWord->addSection(['marginTop' => 700, 'marginBottom' => 700, 'marginLeft' => 900, 'marginRight' => 900]);
 
-        // Tablo stili
-        $tableStyle = [
-            'borderSize' => 6,
-            'borderColor' => 'CCCCCC',
-            'cellMargin' => 80,
-        ];
-        $phpWord->addTableStyle('serviceTable', $tableStyle);
+        $header = function () use ($section, $data) {
+            $t = $section->addTable(['width' => 100 * 50, 'unit' => 'pct']);
+            $t->addRow();
+            $left = $t->addCell(4500);
+            if ($data['company']['logo_path']) {
+                $left->addImage($data['company']['logo_path'], ['height' => 42]);
+            } else {
+                $left->addText('ESAS', 'brand', 'cell');
+                $left->addText('G R O U P', 'brandSub', 'cell');
+            }
+            $right = $t->addCell(5500);
+            $right->addText($data['company']['name'], 'companyName', 'cellRight');
+            $right->addText($data['company']['address'], 'small', 'cellRight');
+            $right->addText('Tel: '.$data['company']['phone'].'  Mail: '.$data['company']['email'], 'small', 'cellRight');
+            $section->addTextBreak();
+        };
 
-        // ============ SAYFA 1 - GİRİŞ MEKTUBU ============
-        $section = $phpWord->addSection([
-            'marginTop' => 600,
-            'marginBottom' => 600,
-            'marginLeft' => 600,
-            'marginRight' => 600,
-        ]);
+        $signature = function () use ($section) {
+            $section->addTextBreak(2);
+            $t = $section->addTable(['width' => 100 * 50, 'unit' => 'pct']);
+            $t->addRow();
+            $c1 = $t->addCell(5000);
+            $c1->addText('Firma Unvanı', 'bold', 'cell');
+            $c1->addText('Kaşe – Yetkili İmza', 'bold', 'cell');
+            $c2 = $t->addCell(5000);
+            $c2->addText('Firma Unvanı', 'bold', 'cellRight');
+            $c2->addText('Kaşe – Yetkili İmza', 'bold', 'cellRight');
+        };
 
-        // Logo ve Firma bilgileri
-        $headerTable = $section->addTable();
-        $headerTable->addRow();
-        $logoCell = $headerTable->addCell(4500);
-        $logoCell->addText('ESAS', 'headerStyle');
-        $logoCell->addText('G R O U P', 'subHeaderStyle');
-
-        $infoCell = $headerTable->addCell(5500);
-        $infoCell->addText($data['company']['name'], 'companyNameStyle', 'rightStyle');
-        $infoCell->addText($data['company']['address'], 'smallStyle', 'rightStyle');
-        $infoCell->addText('Tel: ' . $data['company']['phone'] . ' Mail: ' . $data['company']['email'], 'smallStyle', 'rightStyle');
-        $infoCell->addText($data['company']['website'], 'linkStyle', 'rightStyle');
-
-        $section->addTextBreak(2);
-
-        // Tarih
-        $section->addText('Tarih: ' . $data['generated_at'], 'boldStyle', 'rightStyle');
-        $section->addTextBreak(2);
-
-        // Sayın
-        $section->addText('Sayın, ' . $data['customer']['contact_person'], 'boldStyle');
+        // ---- Sayfa 1: ön yazı
+        $header();
+        $section->addText('Tarih: '.$data['generated_at'], 'bold', 'right');
         $section->addTextBreak();
-
-        // Giriş metinleri
-        $section->addText(
-            $data['project']['start_date'] . ' – ' . $data['project']['end_date'] . ' tarihleri arasında, ' .
-                $data['project']['location'] . '\'de düzenlenecek olan "' . $data['project']['name'] .
-                '" etkinliği kapsamında tarafımıza iletilen talebinize istinaden, kurumsal hizmet anlayışımız ve deneyimli kadromuzla özel olarak hazırladığımız teklif dosyasını takdim ederiz.',
-            'normalStyle',
-            'justifyStyle'
-        );
-
-        $section->addText(
-            $data['company']['name'] . ' olarak; bireysel gözlem ve kontrol sorumluluğu alanında, yalnızca sahada bulunmakla kalmayıp temsil niteliğini de üstlenen personel yapımızla, etkinliğinize değer katmayı amaçlıyoruz.',
-            'normalStyle',
-            'justifyStyle'
-        );
-
-        $section->addText(
-            'Sunduğumuz bu hizmet, etkinliğinizin ruhuna uygun olarak; dikkat, zarafet ve profesyonelliği bir arada barındırmaktadır. Personelimizin tüm lojistik planlaması (konaklama, ulaşım, yemek vb.) teklif kapsamında detaylandırılmış olup, müşterimizin ihtiyaçlarına göre esnek bir yapı sunulmuştur.',
-            'normalStyle',
-            'justifyStyle'
-        );
-
-        $section->addText(
-            'İnsana dokunan her etkinlikte; güven, düzen ve temsil gücü bir arada olmalıdır. Biz de bu bilinçle, sizinle aynı hassasiyeti taşıyarak hareket etmekteyiz.',
-            'normalStyle',
-            'justifyStyle'
-        );
-
-        $section->addText(
-            'İş birliğiniz için teşekkür eder, huzurlu ve başarılı bir organizasyon dileriz.',
-            'normalStyle',
-            'justifyStyle'
-        );
-
+        $section->addText('Sayın '.($data['customer']['contact_person'] ?: 'Yetkili').',', 'bold');
         $section->addTextBreak();
-        $section->addText('Saygılarımızla,', 'normalStyle');
-        $section->addText($data['company']['name'] . '\'e göstermiş olduğunuz ilgiye teşekkür ederiz.', 'boldStyle');
-
-        // ============ SAYFA 2 - HİZMET ALIMI TABLOSU ============
-        $section->addPageBreak();
-
-        // Header tekrar
-        $headerTable2 = $section->addTable();
-        $headerTable2->addRow();
-        $logoCell2 = $headerTable2->addCell(4500);
-        $logoCell2->addText('ESAS', 'headerStyle');
-        $logoCell2->addText('G R O U P', 'subHeaderStyle');
-
-        $infoCell2 = $headerTable2->addCell(5500);
-        $infoCell2->addText($data['company']['name'], 'companyNameStyle', 'rightStyle');
-        $infoCell2->addText($data['company']['address'], 'smallStyle', 'rightStyle');
-        $infoCell2->addText('Tel: ' . $data['company']['phone'] . ' Mail: ' . $data['company']['email'], 'smallStyle', 'rightStyle');
-
-        $section->addTextBreak(2);
-
-        // Firma bilgileri tablosu
-        $infoTable = $section->addTable();
-        $infoTable->addRow();
-        $infoTable->addCell(2000)->addText('Firma', 'boldStyle');
-        $infoTable->addCell(200)->addText(':');
-        $infoTable->addCell(4000)->addText($data['customer']['name'], 'normalStyle');
-        $infoTable->addCell(1500)->addText('Tarih', 'boldStyle');
-        $infoTable->addCell(2000)->addText(':' . $data['generated_at'], 'normalStyle');
-
-        $infoTable->addRow();
-        $infoTable->addCell(2000)->addText('Firma Yetkilisi', 'boldStyle');
-        $infoTable->addCell(200)->addText(':');
-        $infoTable->addCell(4000)->addText($data['customer']['contact_person'], 'normalStyle');
-
-        $infoTable->addRow();
-        $infoTable->addCell(2000)->addText('Hizmet Yeri', 'boldStyle');
-        $infoTable->addCell(200)->addText(':');
-        $infoTable->addCell(4000)->addText($data['project']['location'], 'normalStyle');
-
-        $infoTable->addRow();
-        $infoTable->addCell(2000)->addText('Hizmet Adı', 'boldStyle');
-        $infoTable->addCell(200)->addText(':');
-        $infoTable->addCell(4000)->addText($data['project']['service_name'], 'normalStyle');
-
-        $infoTable->addRow();
-        $infoTable->addCell(2000)->addText('Hizmet Tarihi', 'boldStyle');
-        $infoTable->addCell(200)->addText(':');
-        $infoTable->addCell(4000)->addText($data['project']['start_date'] . ' – ' . $data['project']['end_date'], 'normalStyle');
-
-        $section->addTextBreak();
-
-        // Hizmet Alımı başlığı
-        $section->addText('1. Hizmet Alımı', 'sectionTitleStyle');
-        $section->addTextBreak();
-
-        // Hizmet tablosu
-        $serviceTable = $section->addTable('serviceTable');
-        $serviceTable->addRow();
-        $serviceTable->addCell(600)->addText('No', 'boldStyle');
-        $serviceTable->addCell(4000)->addText('Hizmet', 'boldStyle');
-        $serviceTable->addCell(1000)->addText('Sayı', 'boldStyle');
-        $serviceTable->addCell(1000)->addText('Gün', 'boldStyle');
-        $serviceTable->addCell(1500)->addText('Birim Fiyat', 'boldStyle');
-
-        $serviceTable->addRow();
-        $serviceTable->addCell(600)->addText('1', 'normalStyle');
-        $cell = $serviceTable->addCell(4000);
-        $cell->addText($data['project']['service_name'], 'normalStyle');
-        $cell->addText('(Ücret, sigorta, vergi ve genel giderler)', 'smallStyle');
-        $serviceTable->addCell(1000)->addText($data['service_summary']['personnel']['person_count'], 'normalStyle');
-        $serviceTable->addCell(1000)->addText($data['project']['total_days'], 'normalStyle');
-        $serviceTable->addCell(1500)->addText('₺' . number_format($data['service_summary']['personnel']['daily_rate'], 2, ',', '.'), 'normalStyle');
-
-        $section->addTextBreak();
-
-        // Toplam
-        $totalTable = $section->addTable('serviceTable');
-        $totalTable->addRow();
-        $totalTable->addCell(6600)->addText('Toplam (KDV Hariç Fiyat) Hizmet Bedeli', 'boldStyle');
-        $totalTable->addCell(1500)->addText('₺' . number_format($data['costs']['subtotal'], 2, ',', '.'), 'boldStyle');
-
-        $section->addTextBreak();
-
-        // Not
-        $section->addText(
-            'Not: Yukarıda belirtilen teklif fiyatı, sadece bu projeye özel olarak tarafınıza sunulmuş olup; ' .
-                $data['project']['name'] . ' organizasyonunun içeriği, süresi ve niteliği dikkate alınarak özel olarak hazırlanmıştır. ' .
-                'Bu rakam, ' . $data['company']['name'] . '\'nin hizmet kalitesi ve güven anlayışını yansıtan ayrıcalıklı bir tekliftir.',
-            'italicStyle'
-        );
-
-        // İmza alanları
-        $section->addTextBreak(3);
-        $sigTable = $section->addTable();
-        $sigTable->addRow();
-        $sigTable->addCell(4500)->addText('Firma Unvanı', 'boldStyle');
-        $sigTable->addCell(4500)->addText('Firma Unvanı', 'boldStyle', 'rightStyle');
-
-        // ============ SAYFA 3-5 - ŞARTLAR VE KOŞULLAR ============
-        $section->addPageBreak();
-
-        // Şartlar sayfası header
-        $headerTable3 = $section->addTable();
-        $headerTable3->addRow();
-        $logoCell3 = $headerTable3->addCell(4500);
-        $logoCell3->addText('ESAS', 'headerStyle');
-        $logoCell3->addText('G R O U P', 'subHeaderStyle');
-
-        $infoCell3 = $headerTable3->addCell(5500);
-        $infoCell3->addText($data['company']['name'], 'companyNameStyle', 'rightStyle');
-        $infoCell3->addText($data['company']['address'], 'smallStyle', 'rightStyle');
-
-        $section->addTextBreak();
-
-        // Kaşe - Yetkili İmza
-        $sigTable2 = $section->addTable();
-        $sigTable2->addRow();
-        $sigTable2->addCell(4500)->addText('Kaşe – Yetkili İmza', 'boldStyle');
-        $sigTable2->addCell(4500)->addText('Kaşe – Yetkili İmza', 'boldStyle', 'rightStyle');
-
-        $section->addTextBreak();
-
-        // 1. Fiyatlandırma
-        $section->addText('1.FİYATLANDIRMA ve ÖDEME KOŞULLARI', 'sectionTitleStyle');
-        $section->addText('Tüm fiyatlar Katma Değer Vergisi (KDV) hariçtir. Yürürlükteki yasal KDV oranı ayrıca faturalandırılacaktır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Bu projeye özel olarak görevlendirilecek Bireysel Gözlem ve Kontrol Sorumlusu için hizmet bedeli, etkinliğin tamamlanmasının ardından faturalandırılacaktır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Fatura tarihinden itibaren en geç 7 (yedi) iş günü içerisinde ödeme yapılması gerekmektedir.', 'normalStyle', 'justifyStyle');
-        $section->addText('Ödeme yükümlülüğünün gecikmesi durumunda, ödeme tarihinden önce hizmet alıcısına yazılı bildirim yapılır. Buna rağmen ödeme gerçekleştirilmezse yasal faiz ve tahsilat süreci başlatılır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Mücbir sebep hâllerinde (doğal afet, kamu kararı, olağanüstü durumlar) ödeme koşulları taraflar arasında karşılıklı değerlendirilerek yeniden düzenlenebilir.', 'normalStyle', 'justifyStyle');
-
-        // 2. Hizmet Kapsamı
-        $section->addText('2. HİZMET KAPSAMI ve ÇALIŞMA KOŞULLARI', 'sectionTitleStyle');
-        $section->addText('Personel çalışma süresi günlük ortalama 8 (Sekiz) saat esas alınarak planlanmıştır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Ek süre talepleri veya olağandışı durumlar ayrıca ücretlendirilir.', 'normalStyle', 'justifyStyle');
-
-        // 3. Personel Görevlendirme Planı
-        $section->addText('3. PERSONEL GÖREVLENDİRME PLANI', 'sectionTitleStyle');
-
-        foreach ($data['days'] as $index => $day) {
-            $personnelCount = count($day['personnel']);
-            $section->addText(
-                ($index + 1) . '.Gün    ' . $personnelCount . ' Bay Personel    ' . $day['date'] . '    ₺' . number_format($day['personnel_cost'], 2, ',', '.'),
-                'normalStyle'
-            );
+        foreach ($data['cover_paragraphs'] as $p) {
+            $section->addText($p, 'normal', 'justify');
         }
         $section->addTextBreak();
-        $section->addText('TOPLAM    ₺' . number_format($data['costs']['personnel_cost'], 2, ',', '.'), 'boldStyle');
-        $section->addText('Görevli personel yukarıda tabloda belirtilen tarihlerde ' . $data['project']['total_days'] . ' gün çalışacak şekilde planlanmıştır.', 'normalStyle');
+        $section->addText('Saygılarımızla,', 'normal');
+        $section->addText($data['company']['name'], 'bold');
+        $section->addText('Güvenlik & Organizasyon Hizmetleri', 'small');
 
-        // 4. Yemek ve Ulaşım
-        $section->addText('4.YEMEK ve ULAŞIM KOŞULLARI', 'sectionTitleStyle');
-        $section->addText('Yemek ve ulaşım hizmet bedeli, müşteri tarafından karşılanacaktır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Yemek hizmeti müşteri tarafından karşılandığı takdirde, yiyecek ve içecekler önceden belirtilen saatte eksiksiz şekilde personellere ulaştırılmalıdır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Görev süresi boyunca personele en az 3 (üç) öğün yemek sağlanmalıdır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Ulaşım hizmeti de müşteri sorumluluğundadır ve personelin zamanında alana ulaştırılmasını sağlayacak şekilde organize edilmelidir.', 'normalStyle', 'justifyStyle');
-        $section->addText('Yemek veya ulaşımın müşteri tarafından sağlanmaması durumunda, ' . $data['company']['name'] . ' tarafından temin edilen her bir personel için günlük yemek ve ulaşım bedeli ayrı olarak faturalandırılacaktır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Yemeklerde gecikme yaşanması hâlinde hizmetin aksamaması için gerekli destek sağlanacak, oluşan maliyet hizmet alıcısına yansıtılacaktır.', 'normalStyle', 'justifyStyle');
-
-        // 5. Ekipman
-        $section->addText('5.EKİPMAN KİRALAMA ve KULLANIM ŞARTLARI', 'sectionTitleStyle');
-        $section->addText('Kiralanan tüm ekipmanlar (telsiz, dedektör, X-Ray, bariyer) tutanakla teslim edilir.', 'normalStyle', 'justifyStyle');
-        $section->addText('Hasar, kayıp, kırılma, sıvı teması gibi durumlarda güncel piyasa rayiç bedeli faturalandırılır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Elektrik, koruyucu çadır gibi altyapı ihtiyaçları müşteri tarafından sağlanmalıdır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Bariyer kurulumuna müşteri yetkilisi eşlik etmeli, yeniden konumlandırmalar ek ücretlendirilir.', 'normalStyle', 'justifyStyle');
-        $section->addText('Verilen teklif fiyatları organizasyon şartlarına göre taraflarca karşılıklı görüşülerek değişkenlik sağlayabilir.', 'normalStyle', 'justifyStyle');
-        $section->addText('Gün sayısı ve kişi sayılarından birinin değişmesi halinde tekrar fiyatlandırılıp faturalandırılacaktır.', 'normalStyle', 'justifyStyle');
-
-        // Sayfa 4
+        // ---- Sayfa 2: bilgi + tablolar
         $section->addPageBreak();
+        $header();
 
-        // Header
-        $headerTable4 = $section->addTable();
-        $headerTable4->addRow();
-        $logoCell4 = $headerTable4->addCell(4500);
-        $logoCell4->addText('ESAS', 'headerStyle');
-        $logoCell4->addText('G R O U P', 'subHeaderStyle');
-
-        $infoCell4 = $headerTable4->addCell(5500);
-        $infoCell4->addText($data['company']['name'], 'companyNameStyle', 'rightStyle');
-
+        $info = $section->addTable(['width' => 100 * 50, 'unit' => 'pct']);
+        $rows = [
+            ['Firma', $data['customer']['name'], 'Tarih', $data['generated_at']],
+            ['Firma Yetkilisi', $data['customer']['contact_person'], 'Teklif No', $data['proposal_no']],
+            ['Hizmet Yeri', $data['project']['location'], '', ''],
+            ['Hizmet Adı', $data['project']['service_name'], '', ''],
+            ['Hizmet Tarihi', $data['project']['date_range'], '', ''],
+        ];
+        foreach ($rows as [$l1, $v1, $l2, $v2]) {
+            $info->addRow();
+            $info->addCell(2000)->addText($l1, 'bold', 'cell');
+            $info->addCell(4500)->addText(': '.$v1, 'normal', 'cell');
+            $info->addCell(1500)->addText($l2, 'bold', 'cell');
+            $info->addCell(2000)->addText($l2 !== '' ? ': '.$v2 : '', 'normal', 'cell');
+        }
         $section->addTextBreak();
 
-        // İmza
-        $sigTable3 = $section->addTable();
-        $sigTable3->addRow();
-        $cell1 = $sigTable3->addCell(4500);
-        $cell1->addText('Firma Unvanı', 'boldStyle');
-        $cell1->addText('Kaşe – Yetkili İmza', 'boldStyle');
-        $cell2 = $sigTable3->addCell(4500);
-        $cell2->addText('Firma Unvanı', 'boldStyle', 'rightStyle');
-        $cell2->addText('Kaşe – Yetkili İmza', 'boldStyle', 'rightStyle');
+        foreach ($data['sections'] as $sIndex => $sec) {
+            $section->addText(($sIndex + 1).'. '.$sec['title'], 'sectionTitle');
 
-        $section->addTextBreak();
+            $cols = [['No', 500, 'cellCenter']];
+            $cols[] = ['Hizmet', 3800, 'cell'];
+            if ($sec['show_duration']) {
+                $cols[] = ['Çalışma Süresi', 1200, 'cellCenter'];
+            }
+            $cols[] = [$sec['unit_label'], 900, 'cellCenter'];
+            if ($sec['show_days']) {
+                $cols[] = ['Gün', 700, 'cellCenter'];
+            }
+            if ($sec['show_unit_price']) {
+                $cols[] = ['Birim Fiyat', 1500, 'cellRight'];
+            }
+            $cols[] = ['Toplam', 1600, 'cellRight'];
 
-        // 6. Resmi Güvenlik İzni
-        $section->addText('6.RESMİ GÜVENLİK İZNİ ve BELGELER', 'sectionTitleStyle');
-        $section->addText('5188 sayılı kanun gereği resmî izin başvurusu için aşağıdaki belgeler en geç 7 gün önce teslim edilmelidir:', 'normalStyle', 'justifyStyle');
-        $section->addText('- Güncel imza sirküleri', 'normalStyle');
-        $section->addText('- Ticaret sicil gazetesi', 'normalStyle');
-        $section->addText('- Vergi levhası', 'normalStyle');
-        $section->addText('- Faaliyet belgesi', 'normalStyle');
-        $section->addText('- Şirket yetkilisi kimlik fotokopisi', 'normalStyle');
-        $section->addText('- İmzalanmış sözleşme', 'normalStyle');
-        $section->addText('- Organizasyon bilet ve afiş görseli', 'normalStyle');
-        $section->addText('Evrak eksikliği durumunda Valilik onayı alınamaz, görev planı uygulanamaz, tüm sorumluluk hizmet alıcısına aittir.', 'normalStyle', 'justifyStyle');
+            $table = $section->addTable('grid');
+            $table->addRow(320, ['tblHeader' => true]);
+            foreach ($cols as [$label, $width, $align]) {
+                $table->addCell($width, ['bgColor' => '2B2A29', 'valign' => 'center'])->addText($label, 'th', $align);
+            }
 
-        // 7. İptal
-        $section->addText('7.İPTAL KOŞULLARI', 'sectionTitleStyle');
-        $section->addText('Hizmet iptali en az 7 iş günü önceden yazılı olarak yapılmalıdır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Aynı gün yapılan iptaller geçerli sayılmaz; toplam bedel tahsil edilir.', 'normalStyle', 'justifyStyle');
-        $section->addText('Kamu otoritesi kaynaklı iptallerde taraflar mücbir sebep hükümleriyle sorumluluktan muaf tutulur.', 'normalStyle', 'justifyStyle');
+            foreach ($sec['items'] as $i => $it) {
+                $table->addRow();
+                $table->addCell(500, ['valign' => 'center'])->addText((string) ($i + 1), 'td', 'cellCenter');
+                $desc = $table->addCell(3800, ['valign' => 'center']);
+                $desc->addText($it['description'], 'td', 'cell');
+                if (!empty($it['note'])) {
+                    $desc->addText($it['note'], 'tdNote', 'cell');
+                }
+                if ($sec['show_duration']) {
+                    $table->addCell(1200, ['valign' => 'center'])->addText((string) ($it['duration_label'] ?? ''), 'td', 'cellCenter');
+                }
+                $table->addCell(900, ['valign' => 'center'])->addText(self::qty($it['quantity']), 'td', 'cellCenter');
+                if ($sec['show_days']) {
+                    $table->addCell(700, ['valign' => 'center'])->addText((string) $it['days'], 'td', 'cellCenter');
+                }
+                if ($sec['show_unit_price']) {
+                    $table->addCell(1500, ['valign' => 'center'])->addText($it['unit_price'] !== null ? self::money($it['unit_price'], $symbol) : '', 'td', 'cellRight');
+                }
+                $table->addCell(1600, ['valign' => 'center'])->addText(self::money($it['total_price'], $symbol), 'td', 'cellRight');
+            }
 
-        // 8. Alt Yüklenici
-        $section->addText('8.ALT YÜKLENİCİ KULLANIMI', 'sectionTitleStyle');
-        $section->addText($data['company']['name'] . ', gerekli durumlarda, 5188 sayılı kanuna uygun alt yüklenicilerle çalışabilir.', 'normalStyle', 'justifyStyle');
-        $section->addText('Bu durumda hizmet kalitesi, yasal ve operasyonel sorumluluk yine ' . $data['company']['name'] . '\'ye aittir.', 'normalStyle', 'justifyStyle');
+            $table->addRow();
+            $span = count($cols) - 1;
+            $table->addCell(9000, ['gridSpan' => $span, 'bgColor' => 'F2F2F2'])->addText('TOPLAM', 'bold', 'cellRight');
+            $table->addCell(1600, ['bgColor' => 'F2F2F2'])->addText(self::money($sec['total'], $symbol), 'bold', 'cellRight');
+            $section->addTextBreak();
+        }
 
-        // 9. Mücbir Sebep
-        $section->addText('9.MÜCBİR SEBEP HÜKMÜ', 'sectionTitleStyle');
-        $section->addText('Doğal afet, yangın, salgın, grev', 'normalStyle');
-        $section->addText('Savaş, iç karışıklık, sabotaj', 'normalStyle');
-        $section->addText('Kamu otoritesinin iptal/yasak kararı', 'normalStyle');
-        $section->addText('Bu durumlarda yükümlülükler askıya alınır, karşılıklı mutabakatla planlama yeniden yapılır.', 'normalStyle', 'justifyStyle');
+        if (count($data['sections']) > 1) {
+            $tot = $section->addTable('grid');
+            $tot->addRow();
+            $tot->addCell(8400, ['bgColor' => '2B2A29'])->addText('GENEL TOPLAM (KDV Hariç)', ['bold' => true, 'size' => 10, 'color' => 'FFFFFF'], 'cellRight');
+            $tot->addCell(1600, ['bgColor' => '2B2A29'])->addText(self::money($data['totals']['subtotal'], $symbol), ['bold' => true, 'size' => 10, 'color' => 'FFFFFF'], 'cellRight');
+            $section->addTextBreak();
+        }
 
-        // 10. Resmi Tatil
-        $section->addText('10. RESMİ TATİL ve BAYRAM GÜNLERİNDE ÇALIŞMA ÜCRETİ', 'sectionTitleStyle');
-        $section->addText('Ulusal bayram ve genel tatil günlerinde yapılacak görevlerde, 4857 Sayılı İş Kanunu\'nun 47. maddesi uyarınca çalışan personele o gün için çifte ücret ödenmesi yasal zorunluluktur.', 'normalStyle', 'justifyStyle');
-        $section->addText('Bu nedenle, resmî tatil günlerine denk gelen görevlerde günlük ücretin %100 fazlası uygulanır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Bu bedel fatura kalemlerine ayrı olarak yansıtılır.', 'normalStyle', 'justifyStyle');
-        $section->addText('Bu uygulama hem yasal zorunluluklara hem de personel haklarına saygı esasına dayalıdır.', 'normalStyle', 'justifyStyle');
-
-        // 11. Onay Beyanı
-        $section->addText('11. TEKLİF ONAY BEYANI – GEÇERLİLİK ve NÜSHA BİLGİSİ', 'sectionTitleStyle');
-        $section->addText('Yukarıdaki belirtilen hizmetleri, teklif şartları doğrultusunda kabul ediyoruz.', 'normalStyle', 'justifyStyle');
-
-        // İmza
-        $section->addTextBreak(2);
-        $sigTable4 = $section->addTable();
-        $sigTable4->addRow();
-        $cell3 = $sigTable4->addCell(4500);
-        $cell3->addText('Firma Unvanı', 'boldStyle');
-        $cell3->addText('Kaşe – Yetkili İmza', 'boldStyle');
-        $cell4 = $sigTable4->addCell(4500);
-        $cell4->addText('Firma Unvanı', 'boldStyle', 'rightStyle');
-        $cell4->addText('Kaşe – Yetkili İmza', 'boldStyle', 'rightStyle');
-
-        // Sayfa 5 - Kapanış
-        $section->addPageBreak();
-
-        // Header
-        $headerTable5 = $section->addTable();
-        $headerTable5->addRow();
-        $logoCell5 = $headerTable5->addCell(4500);
-        $logoCell5->addText('ESAS', 'headerStyle');
-        $logoCell5->addText('G R O U P', 'subHeaderStyle');
-
-        $infoCell5 = $headerTable5->addCell(5500);
-        $infoCell5->addText($data['company']['name'], 'companyNameStyle', 'rightStyle');
-
-        $section->addTextBreak(3);
-
-        // Kapanış metni
         $section->addText(
-            'İşbu teklif, şirket tanıtımı dâhil toplam 11 (on bir) maddeden ve 4 (dört) sayfadan ibarettir. Metin içerisinde belirtilen tüm şartlar ayrılmaz bir bütün teşkil eder. Teklifin herhangi bir maddesi üzerinde yapılacak değişiklikler, ancak taraflar arasında karşılıklı yazılı mutabakat ile geçerli olur. Her iki tarafça imzalanan nüshalar aynı hukuki geçerliliğe sahiptir.',
-            'normalStyle',
-            'justifyStyle'
+            'Belirtilen fiyatlar mevcut operasyonel planlama ve kapsam doğrultusunda hazırlanmıştır. Organizasyon süresi, personel sayısı ve operasyonel ihtiyaçlarda meydana gelebilecek değişikliklere bağlı olarak fiyat revizyonu yapılabilir. Teklif '.$data['valid_until'].' tarihine kadar geçerlidir.',
+            'italicNote',
+            'justify'
         );
+        $signature();
 
-        // Dosyayı kaydet ve indir
-        $filename = 'Teklif_' . ($data['proposal_no'] ?? $project->id) . '_' . now()->format('Ymd') . '.docx';
-        $tempPath = storage_path('app/temp/' . $filename);
+        // ---- Sayfa 3: şartlar
+        if ($data['terms']) {
+            $section->addPageBreak();
+            $header();
+            $section->addText('TEKLİF ŞARTLARI VE KOŞULLARI', ['bold' => true, 'size' => 12, 'color' => 'BF272E'], 'center');
+            $section->addTextBreak();
+            foreach ($data['terms'] as $i => $term) {
+                $section->addText(($i + 1).'. '.$term['title'], 'bold');
+                foreach (preg_split("/\r\n|\n/", $term['body']) as $line) {
+                    if (trim($line) !== '') {
+                        $section->addText(trim($line), 'normal', 'justify');
+                    }
+                }
+            }
+            $signature();
+        }
 
-        // Temp klasörü oluştur
-        if (!file_exists(storage_path('app/temp'))) {
+        if (!is_dir(storage_path('app/temp'))) {
             mkdir(storage_path('app/temp'), 0755, true);
         }
-
-        $writer = IOFactory::createWriter($phpWord, 'Word2007');
-        $writer->save($tempPath);
+        $filename = 'Teklif_'.$data['proposal_no'].'_'.now()->format('Ymd').'.docx';
+        $tempPath = storage_path('app/temp/'.uniqid('teklif_').'.docx');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tempPath);
 
         return response()->download($tempPath, $filename)->deleteFileAfterSend(true);
     }

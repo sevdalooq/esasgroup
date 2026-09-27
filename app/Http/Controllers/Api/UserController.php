@@ -64,6 +64,23 @@ class UserController extends Controller
     }
 
     /**
+     * Saha sorumlusu olarak atanabilecek kullanıcılar (saha erişimi olan aktif kullanıcılar)
+     */
+    public function supervisors(): JsonResponse
+    {
+        $users = User::select('id', 'name', 'email', 'phone', 'is_active')
+            ->where('is_active', true)
+            ->with('roles:id,name')
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (User $u) => $u->hasPermission('field.access'))
+            ->values()
+            ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email, 'phone' => $u->phone]);
+
+        return response()->json($users);
+    }
+
+    /**
      * Kullanıcı detayı
      */
     public function show(User $user): JsonResponse

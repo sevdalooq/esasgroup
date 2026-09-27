@@ -21,7 +21,10 @@ class CheckPermission
             return response()->json(['message' => 'Oturum açılmamış'], 401);
         }
 
-        if (!$user->hasPermission($permission)) {
+        // "a|b" biçimi: izinlerden herhangi biri yeterli
+        $allowed = collect(explode('|', $permission))->contains(fn ($p) => $user->hasPermission(trim($p)));
+
+        if (!$allowed) {
             return response()->json(['message' => 'Bu işlem için yetkiniz yok'], 403);
         }
 

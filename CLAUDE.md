@@ -22,6 +22,7 @@ Giriş: `admin@esasgroup.com.tr` / `EsasAdmin2026!` (seed). Tip kontrolü: `npx 
 - Yeni endpoint'ler `routes/api.php` içinde `auth:sanctum` + `permission:` middleware ile; "/all" gibi listeleme uçları da izin ister.
 - Proje durumları: `draft, pending, approved, active, completed, cancelled` (`confirmed` YOK). Envanter durumu: `current_status`.
 - Para hesapları `AccountingService` üzerinden ve `DB::transaction` içinde yapılır.
-- Teklif DOCX şablonu: `resources/templates/teklif-sablonu.docx`.
+- Teklif çıktısı (PDF: `resources/views/proposals/template.blade.php`, DOCX: PhpWord ile programatik, `ProposalController`) proje teklif kalemleri (`proposal_sections/items`), ön yazı (`projects.cover_letter`) ve proje şartlarından (`project_proposal_terms`) üretilir; standart şartlar `proposal_term_templates` (Ayarlar > Teklif Şartları).
+- Yapay zeka (ön yazı iyileştirme) `AiTextService` üzerinden Anthropic PHP SDK ile; anahtar Ayarlar > Entegrasyonlar `ai_api_key` veya `ANTHROPIC_API_KEY`.
 - Gün içi kayıt değişiklikleri `LiveBroadcastObserver` ile otomatik yayınlanır; yeni saha işlemleri için ayrıca event fırlatmaya gerek yok. Personel durumu `project_day_personnel.presence` (assigned/checked_in/on_break/checked_out/absent).
 - Sihirbaz/bileşenler `pages/` altına konmaz (route'a dönüşür); `resources/ts/views/` veya `components/` kullanın.

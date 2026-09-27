@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import DayStartWizard from '@/views/projects/DayStartWizard.vue'
 import DayEndWizard from '@/views/projects/DayEndWizard.vue'
+import ProposalItemsEditor from '@/views/projects/ProposalItemsEditor.vue'
+import type { ProposalSectionDraft } from '@/views/projects/ProposalItemsEditor.vue'
+import ProposalTermsEditor from '@/views/projects/ProposalTermsEditor.vue'
+import type { ProposalTermDraft } from '@/views/projects/ProposalTermsEditor.vue'
+import CoverLetterEditor from '@/views/projects/CoverLetterEditor.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getEcho } from '@/composables/useEcho'
 import { useSwal } from '@/composables/useSwal'
@@ -84,6 +89,13 @@ interface Project {
   finalized_at: string | null
   finalized_by: number | null
   notes: string | null
+  cover_letter: string | null
+  service_location: string | null
+  service_name: string | null
+  supervisor_id: number | null
+  supervisor?: { id: number; name: string; phone?: string | null } | null
+  proposal_sections?: any[]
+  proposal_terms?: any[]
   days: ProjectDay[]
   summary?: {
     total_days: number
@@ -135,7 +147,6 @@ const showFinalizeDialog = ref(false)
 const showProposalDialog = ref(false)
 const proposalLoading = ref(false)
 const proposalFormat = ref<'pdf' | 'docx'>('docx')
-const proposalShowTotals = ref(true)
 const finalizingProject = ref(false)
 const dialogLoading = ref(false)
 const offerPriceForm = ref(0)
@@ -264,13 +275,114 @@ const customers = ref<Customer[]>([])
 const accounts = ref<Account[]>([])
 const editForm = ref({
   customer_id: null as number | null,
+  supervisor_id: null as number | null,
   name: '',
   start_date: '',
   end_date: '',
   notes: '',
   offer_price: 0,
+  service_location: '',
+  service_name: '',
 })
 const editErrors = ref<Record<string, string[]>>({})
+const supervisors = ref<Array<{ id: number; name: string; email: string }>>([])
+
+const fetchSupervisors = async () => {
+  try {
+    supervisors.value = await $api('/users/supervisors')
+  }
+  catch (error) {
+    console.error('Error fetching supervisors:', error)
+  }
+}
+
+// ---- Teklif sekmesi (ön yazı, kalemler, şartlar)
+const mainTab = ref<'operations' | 'proposal'>('operations')
+const proposalHeader = ref({ cover_letter: '', service_location: '', service_name: '' })
+const proposalSections = ref<ProposalSectionDraft[]>([])
+const proposalTerms = ref<ProposalTermDraft[]>([])
+const proposalSaving = ref(false)
+const proposalDirty = ref(false)
+
+const loadProposalState = (p: any) => {
+  proposalHeader.value = {
+    cover_letter: p.cover_letter || '',
+    service_location: p.service_location || '',
+    service_name: p.service_name || '',
+  }
+  proposalSections.value = (p.proposal_sections || []).map((sec: any) => ({
+    id: sec.id,
+    title: sec.title,
+    unit_label: sec.unit_label || 'Kişi',
+    show_duration: !!sec.show_duration,
+    show_days: !!sec.show_days,
+    show_unit_price: !!sec.show_unit_price,
+    items: (sec.items || []).map((it: any) => ({
+      id: it.id,
+      description: it.description,
+      note: it.note || '',
+      duration_label: it.duration_label || '',
+      quantity: Number(it.quantity) || 0,
+      days: Number(it.days) || 0,
+      unit_price: it.unit_price === null || it.unit_price === undefined ? null : Number(it.unit_price),
+      total_price: Number(it.total_price) || 0,
+    })),
+  }))
+  proposalTerms.value = (p.proposal_terms || []).map((t: any) => ({
+    id: t.id,
+    template_id: t.template_id,
+    title: t.title,
+    body: t.body,
+    is_enabled: !!t.is_enabled,
+  }))
+  nextTick(() => { proposalDirty.value = false })
+}
+
+watch([proposalHeader, proposalSections, proposalTerms], () => { proposalDirty.value = true }, { deep: true })
+
+const proposalTotal = computed(() =>
+  proposalSections.value.reduce((sum, s) => sum + s.items.reduce((x, it) => x + (Number(it.total_price) || 0), 0), 0),
+)
+
+const canEditProposal = computed(() => !!project.value && !project.value.finalized_at && authStore.hasPermission('projects.edit'))
+
+const saveProposal = async () => {
+  if (!project.value) return
+  proposalSaving.value = true
+  try {
+    await $api(`/projects/${project.value.id}/proposal-sections`, {
+      method: 'PUT',
+      body: { ...proposalHeader.value, sections: proposalSections.value },
+    })
+    await $api(`/projects/${project.value.id}/proposal-terms`, {
+      method: 'PUT',
+      body: { terms: proposalTerms.value },
+    })
+    await fetchProject(true)
+    swal.toast('success', 'Teklif kaydedildi')
+  }
+  catch (error: any) {
+    const firstError = error.data?.errors ? Object.values(error.data.errors as Record<string, string[]>)[0]?.[0] : null
+    swal.toast('error', firstError || error.data?.message || 'Teklif kaydedilemedi')
+  }
+  finally {
+    proposalSaving.value = false
+  }
+}
+
+const resetProposalTerms = async () => {
+  if (!project.value) return
+  const result = await swal.confirm('Şartlar standart şablonlardan yeniden yüklensin mi? Bu projeye özel değişiklikler silinir.')
+  if (!result.isConfirmed) return
+  try {
+    const res = await $api(`/projects/${project.value.id}/proposal-terms/reset`, { method: 'POST' })
+    proposalTerms.value = (res.terms || []).map((t: any) => ({ id: t.id, template_id: t.template_id, title: t.title, body: t.body, is_enabled: !!t.is_enabled }))
+    swal.toast('success', 'Standart şartlar yüklendi')
+  }
+  catch (error: any) {
+    swal.toast('error', error.data?.message || 'Yüklenemedi')
+  }
+}
 
 // Müşteri ödemesi dialog
 const showCustomerPaymentDialog = ref(false)
@@ -319,6 +431,7 @@ const fetchProject = async (silent = false) => {
       })
     }
     project.value = response
+    loadProposalState(response)
     if (keepDayId && response.days?.some((d: any) => d.id === keepDayId)) {
       selectedDay.value = response.days.find((d: any) => d.id === keepDayId)
     }
@@ -836,14 +949,17 @@ const copyFromPreviousDay = async () => {
 const openEditDialog = async () => {
   if (!project.value) return
 
-  await fetchCustomers()
+  await Promise.all([fetchCustomers(), fetchSupervisors()])
   editForm.value = {
     customer_id: project.value.customer_id,
+    supervisor_id: project.value.supervisor_id ?? null,
     name: project.value.name,
     start_date: project.value.start_date,
     end_date: project.value.end_date,
     notes: project.value.notes || '',
     offer_price: Number(project.value.offer_price) || 0,
+    service_location: project.value.service_location || '',
+    service_name: project.value.service_name || '',
   }
   editErrors.value = {}
   showEditDialog.value = true
@@ -870,13 +986,15 @@ const updateProject = async () => {
     project.value.end_date = response.end_date
     project.value.notes = response.notes
     project.value.offer_price = response.offer_price
+    project.value.supervisor_id = response.supervisor_id
+    project.value.supervisor = response.supervisor
+    project.value.service_location = response.service_location
+    project.value.service_name = response.service_name
 
     showEditDialog.value = false
 
-    // Günler değişmiş olabilir, sayfayı yenile
-    if (response.days) {
-      await fetchProject()
-    }
+    // Günler / sorumlu değişmiş olabilir, sayfayı yenile
+    await fetchProject(true)
   }
   catch (error: any) {
     if (error.data?.errors) {
@@ -1285,7 +1403,7 @@ const generateProposal = async () => {
   proposalLoading.value = true
   try {
     // Download URL oluştur
-    const url = `/api/projects/${project.value.id}/proposal?format=${proposalFormat.value}&show_totals=${proposalShowTotals.value ? '1' : '0'}`
+    const url = `${import.meta.env.VITE_API_BASE_URL || ""}/api/projects/${project.value.id}/proposal?format=${proposalFormat.value}`
 
     // Token'ı auth store'dan al
     const token = authStore.token || localStorage.getItem('token')
@@ -1456,6 +1574,15 @@ onBeforeUnmount(() => {
             <h4 class="text-h4">{{ project.name }}</h4>
             <div class="text-body-2 text-disabled">
               {{ project.customer.name }} | {{ formatDate(project.start_date) }} - {{ formatDate(project.end_date) }}
+              <span v-if="project.offer_number"> | {{ project.offer_number }}</span>
+            </div>
+            <div class="d-flex align-center gap-2 mt-1">
+              <VChip v-if="project.supervisor" size="small" color="info" variant="tonal" prepend-icon="tabler-user-shield">
+                Saha Sorumlusu: {{ project.supervisor.name }}
+              </VChip>
+              <VChip v-else size="small" color="warning" variant="tonal" prepend-icon="tabler-alert-triangle" class="cursor-pointer" @click="openEditDialog">
+                Saha sorumlusu atanmadı
+              </VChip>
             </div>
           </div>
         </div>
@@ -1523,6 +1650,77 @@ onBeforeUnmount(() => {
       </VCardText>
     </VCard>
 
+    <VTabs v-model="mainTab" class="mb-4">
+      <VTab value="operations">
+        <VIcon icon="tabler-calendar-event" size="18" class="me-1" />
+        Günler ve Operasyon
+      </VTab>
+      <VTab value="proposal">
+        <VIcon icon="tabler-file-text" size="18" class="me-1" />
+        Teklif
+        <VChip v-if="proposalDirty" size="x-small" color="warning" class="ms-2">kaydedilmedi</VChip>
+      </VTab>
+    </VTabs>
+
+    <VWindow v-model="mainTab" :touch="false">
+    <VWindowItem value="proposal">
+      <VCard class="mb-4">
+        <VCardTitle class="d-flex align-center justify-space-between flex-wrap gap-2 pa-4">
+          <div>
+            <span>Teklif İçeriği</span>
+            <div class="text-body-2 text-disabled">Ön yazı, kategori bazlı kalemler ve şartlar. Teklif fiyatı kalemlerden hesaplanır.</div>
+          </div>
+          <div class="d-flex align-center gap-2 flex-wrap">
+            <VChip color="primary" variant="tonal">Toplam (KDV hariç): {{ formatCurrency(proposalTotal) }}</VChip>
+            <VBtn variant="outlined" prepend-icon="tabler-download" @click="showProposalDialog = true">İndir</VBtn>
+            <VBtn v-if="canEditProposal" color="primary" prepend-icon="tabler-device-floppy" :loading="proposalSaving" :disabled="!proposalDirty" @click="saveProposal">
+              Teklifi Kaydet
+            </VBtn>
+          </div>
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <VRow class="mb-2">
+            <VCol cols="12" md="6">
+              <AppTextField v-model="proposalHeader.service_name" label="Hizmet Adı" placeholder="Boş bırakılırsa proje adı" :readonly="!canEditProposal" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <AppTextField v-model="proposalHeader.service_location" label="Hizmet Yeri" :readonly="!canEditProposal" />
+            </VCol>
+          </VRow>
+
+          <h6 class="text-h6 mb-2">1. Teklif Kalemleri</h6>
+          <ProposalItemsEditor v-model="proposalSections" :readonly="!canEditProposal" :default-days="project.days.length" />
+
+          <VDivider class="my-6" />
+          <h6 class="text-h6 mb-2">2. Ön Yazı</h6>
+          <CoverLetterEditor
+            v-model="proposalHeader.cover_letter"
+            :readonly="!canEditProposal"
+            :context="{
+              project_name: project.name,
+              customer_name: project.customer.name,
+              service_location: proposalHeader.service_location,
+              start_date: project.start_date,
+              end_date: project.end_date,
+              sections: proposalSections,
+            }"
+          />
+
+          <VDivider class="my-6" />
+          <h6 class="text-h6 mb-2">3. Teklif Şartları ve Koşulları</h6>
+          <ProposalTermsEditor v-model="proposalTerms" :readonly="!canEditProposal" show-reset @reset="resetProposalTerms" />
+
+          <div v-if="canEditProposal" class="d-flex justify-end mt-6">
+            <VBtn color="primary" prepend-icon="tabler-device-floppy" :loading="proposalSaving" :disabled="!proposalDirty" @click="saveProposal">
+              Teklifi Kaydet
+            </VBtn>
+          </div>
+        </VCardText>
+      </VCard>
+    </VWindowItem>
+
+    <VWindowItem value="operations">
     <VRow>
       <!-- Sol: Günler Listesi -->
       <VCol cols="12" md="3">
@@ -2066,6 +2264,8 @@ onBeforeUnmount(() => {
         </VAlert>
       </VCol>
     </VRow>
+    </VWindowItem>
+    </VWindow>
 
     <!-- Personel Ekleme Dialog -->
     <VDialog v-model="showPersonnelDialog" max-width="500">
@@ -2581,12 +2781,35 @@ onBeforeUnmount(() => {
             </VCol>
 
             <VCol cols="12" md="6">
+              <AppAutocomplete
+                v-model="editForm.supervisor_id"
+                :items="supervisors"
+                item-title="name"
+                item-value="id"
+                label="Saha Sorumlusu"
+                clearable
+                hint="Atanınca sorumluya bildirim gider; günlere de yayılır"
+                persistent-hint
+                :error-messages="editErrors.supervisor_id"
+              />
+            </VCol>
+
+            <VCol cols="12" md="6">
               <AppTextField
                 v-model.number="editForm.offer_price"
                 label="Teklif Fiyati (TL)"
                 type="number"
+                hint="Teklif kalemleri varsa toplamdan otomatik hesaplanır"
+                persistent-hint
                 :error-messages="editErrors.offer_price"
               />
+            </VCol>
+
+            <VCol cols="12" md="6">
+              <AppTextField v-model="editForm.service_name" label="Hizmet Adı (teklif)" :error-messages="editErrors.service_name" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <AppTextField v-model="editForm.service_location" label="Hizmet Yeri (teklif)" :error-messages="editErrors.service_location" />
             </VCol>
 
             <VCol cols="12">
@@ -2723,19 +2946,11 @@ onBeforeUnmount(() => {
             </VRadio>
           </VRadioGroup>
 
-          <VDivider class="my-4" />
-
-          <VSwitch
-            v-model="proposalShowTotals"
-            label="Toplamları Göster"
-            color="primary"
-            hint="Kapatıldığında birim fiyat ve toplam tutarlar teklifte gösterilmez"
-            persistent-hint
-          />
-
-          <VAlert type="info" variant="tonal" class="mt-4">
-            Teklif formu gunluk personel, envanter ve maliyet detaylarini icerecektir.
-            Ayarlar sayfasindan sablonu ozellesirebilirsiniz.
+          <VAlert v-if="proposalDirty" type="warning" variant="tonal" class="mt-2">
+            Teklif sekmesinde kaydedilmemiş değişiklikler var; çıktı son kaydedilen hali içerir.
+          </VAlert>
+          <VAlert v-else type="info" variant="tonal" class="mt-2">
+            Çıktı: ön yazı, hizmet tabloları (bölüm bazlı), genel toplam ve teklif şartları.
           </VAlert>
         </VCardText>
         <VCardActions class="pa-4">

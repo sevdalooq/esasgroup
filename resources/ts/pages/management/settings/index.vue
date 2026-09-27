@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/auth'
 import { useSwal } from '@/composables/useSwal'
+import ProposalTermTemplates from '@/views/settings/ProposalTermTemplates.vue'
 
 const authStore = useAuthStore()
 const swal = useSwal()
@@ -30,6 +31,7 @@ const logoPreview = ref<string | null>(null)
 const tabs = [
   { value: 'company', title: 'Firma', icon: 'tabler-building' },
   { value: 'proposal', title: 'Teklif', icon: 'tabler-file-text' },
+  { value: 'terms', title: 'Teklif Şartları', icon: 'tabler-list-numbers' },
   { value: 'finance', title: 'Mali', icon: 'tabler-calculator' },
   { value: 'notifications', title: 'Bildirimler', icon: 'tabler-bell' },
   { value: 'mail', title: 'E-posta', icon: 'tabler-mail' },
@@ -324,21 +326,16 @@ onMounted(() => {
                 />
               </VCol>
               <VCol cols="12">
-                <AppTextarea
-                  :model-value="getSettingValue('proposal', 'proposal_terms_and_conditions')"
-                  label="Sartlar ve Kosullar"
-                  rows="5"
-                  @update:model-value="setSettingValue('proposal', 'proposal_terms_and_conditions', $event)"
-                />
-              </VCol>
-              <VCol cols="12">
-                <VSwitch
-                  :model-value="getSettingValue('proposal', 'proposal_show_daily_details', true)"
-                  label="Gunluk detaylari goster (personel, envanter, maliyetler)"
-                  @update:model-value="setSettingValue('proposal', 'proposal_show_daily_details', $event)"
-                />
+                <VAlert type="info" variant="tonal" density="compact">
+                  Teklif şartları artık madde madde "Teklif Şartları" sekmesinden yönetilir.
+                </VAlert>
               </VCol>
             </VRow>
+          </VWindowItem>
+
+          <!-- Teklif Şartları -->
+          <VWindowItem value="terms">
+            <ProposalTermTemplates />
           </VWindowItem>
 
           <!-- Mali Ayarlar -->
@@ -485,6 +482,34 @@ onMounted(() => {
           <VWindowItem value="integrations">
             <VRow>
               <VCol cols="12">
+                <VCard variant="outlined" class="mb-4">
+                  <VCardTitle class="text-subtitle-1">
+                    <VIcon icon="tabler-sparkles" class="me-2" color="primary" />
+                    Yapay Zeka (Teklif Ön Yazısı)
+                  </VCardTitle>
+                  <VCardText>
+                    <VRow>
+                      <VCol cols="12" md="8">
+                        <AppTextField
+                          :model-value="getSettingValue('integrations', 'ai_api_key')"
+                          label="Anthropic API Anahtarı"
+                          type="password"
+                          placeholder="sk-ant-..."
+                          hint="Boş bırakılırsa sunucudaki ANTHROPIC_API_KEY kullanılır"
+                          persistent-hint
+                          @update:model-value="setSettingValue('integrations', 'ai_api_key', $event)"
+                        />
+                      </VCol>
+                      <VCol cols="12" md="4">
+                        <AppTextField
+                          :model-value="getSettingValue('integrations', 'ai_model', 'claude-opus-5')"
+                          label="Model"
+                          @update:model-value="setSettingValue('integrations', 'ai_model', $event)"
+                        />
+                      </VCol>
+                    </VRow>
+                  </VCardText>
+                </VCard>
                 <VCard variant="outlined">
                   <VCardTitle class="text-subtitle-1">
                     <VIcon icon="tabler-brand-whatsapp" class="me-2" color="success" />

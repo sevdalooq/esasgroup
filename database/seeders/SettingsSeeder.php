@@ -256,6 +256,22 @@ class SettingsSeeder extends Seeder
                 'display_name' => 'WhatsApp API Anahtari',
                 'description' => 'WhatsApp Business API anahtari',
             ],
+            [
+                'key' => 'ai_api_key',
+                'value' => null,
+                'type' => 'string',
+                'group' => 'integrations',
+                'display_name' => 'Yapay Zeka API Anahtarı',
+                'description' => 'Anthropic API anahtarı (teklif ön yazısı iyileştirme)',
+            ],
+            [
+                'key' => 'ai_model',
+                'value' => 'claude-opus-5',
+                'type' => 'string',
+                'group' => 'integrations',
+                'display_name' => 'Yapay Zeka Modeli',
+                'description' => 'Kullanılacak Claude modeli',
+            ],
         ];
 
         foreach ($settings as $setting) {

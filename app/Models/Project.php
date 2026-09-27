@@ -15,6 +15,7 @@ class Project extends Model
     protected $fillable = [
         'customer_id',
         'account_id',
+        'supervisor_id',
         'offer_number',
         'name',
         'start_date',
@@ -28,6 +29,9 @@ class Project extends Model
         'finalized_at',
         'finalized_by',
         'notes',
+        'cover_letter',
+        'service_location',
+        'service_name',
         'venue_address',
         'venue_lat',
         'venue_lng',
@@ -62,9 +66,34 @@ class Project extends Model
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    public function supervisor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'supervisor_id');
+    }
+
     public function days(): HasMany
     {
         return $this->hasMany(ProjectDay::class)->orderBy('date');
+    }
+
+    /** Teklif kategori tabloları */
+    public function proposalSections(): HasMany
+    {
+        return $this->hasMany(ProposalSection::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    /** Projeye kopyalanmış teklif şartları */
+    public function proposalTerms(): HasMany
+    {
+        return $this->hasMany(ProjectProposalTerm::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    /** Teklif kalemlerinin toplamı (KDV hariç) */
+    public function proposalTotal(): float
+    {
+        $this->loadMissing('proposalSections.items');
+
+        return (float) $this->proposalSections->sum(fn ($s) => $s->items->sum('total_price'));
     }
 
     public function invoices(): HasMany
