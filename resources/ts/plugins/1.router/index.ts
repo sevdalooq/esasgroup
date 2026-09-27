@@ -45,6 +45,7 @@ const routePermissions: Record<string, string> = {
   'personnel-create': 'personnel.create',
   'personnel-id-edit': 'personnel.edit',
   'personnel-applications': 'candidates.view',
+  'personnel-blacklist': 'personnel.blacklist_request',
   'inventory': 'inventory.view',
   'inventory-labels': 'inventory.view',
   'saha': 'field.access',

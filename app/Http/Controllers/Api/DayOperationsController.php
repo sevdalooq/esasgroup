@@ -70,6 +70,8 @@ class DayOperationsController extends Controller
             'inventory_ids.*' => 'exists:project_day_inventory,id',
         ]);
 
+        \App\Services\BlacklistService::assertCanCheckIn($assignment);
+
         DB::beginTransaction();
         try {
             // Personeli güncelle

@@ -337,6 +337,7 @@ onMounted(() => {
             </VAvatar>
             <div>
               <span class="font-weight-medium">{{ item.first_name }} {{ item.last_name }}</span>
+              <VChip v-if="item.is_blacklisted" size="x-small" color="error" class="ms-1" prepend-icon="tabler-ban">Kara liste</VChip>
               <div v-if="item.address" class="text-caption text-disabled" style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                 {{ item.address }}
               </div>

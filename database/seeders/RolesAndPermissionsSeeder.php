@@ -48,6 +48,8 @@ class RolesAndPermissionsSeeder extends Seeder
             ['name' => 'personnel.create', 'display_name' => 'Personel Oluştur', 'group' => 'Personel'],
             ['name' => 'personnel.edit', 'display_name' => 'Personel Düzenle', 'group' => 'Personel'],
             ['name' => 'personnel.delete', 'display_name' => 'Personel Sil', 'group' => 'Personel'],
+            ['name' => 'personnel.blacklist_request', 'display_name' => 'Kara Liste Talebi Aç', 'group' => 'Personel'],
+            ['name' => 'personnel.blacklist_approve', 'display_name' => 'Kara Liste Onayla / Yönet', 'group' => 'Personel'],
 
             // Grup/Firma izinleri
             ['name' => 'groups.view', 'display_name' => 'Ekipleri Gör', 'group' => 'Ekipler'],
@@ -149,7 +151,7 @@ class RolesAndPermissionsSeeder extends Seeder
         // Manager izinleri
         $managerPermissions = Permission::whereIn('name', [
             'customers.view', 'customers.create', 'customers.edit',
-            'personnel.view', 'personnel.create', 'personnel.edit',
+            'personnel.view', 'personnel.create', 'personnel.edit', 'personnel.blacklist_request', 'personnel.blacklist_approve',
             'groups.view', 'groups.create', 'groups.edit',
             'inventory.view', 'inventory.create', 'inventory.edit',
             'projects.view', 'projects.create', 'projects.edit', 'projects.manage_days', 'projects.start_day', 'projects.end_day', 'projects.change_status',
@@ -162,7 +164,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
         // Supervisor izinleri
         $supervisorPermissions = Permission::whereIn('name', [
-            'personnel.view',
+            'personnel.view', 'personnel.blacklist_request',
             'inventory.view',
             'projects.view', 'projects.manage_days', 'projects.start_day', 'projects.end_day', 'projects.change_status',
             'finance.manage_payments',

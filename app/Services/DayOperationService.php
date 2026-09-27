@@ -115,6 +115,8 @@ class DayOperationService
      */
     public function checkIn(ProjectDayPersonnel $assignment, ?string $zone, bool $isChecked = true, ?string $photoPath = null): ProjectDayPersonnel
     {
+        BlacklistService::assertCanCheckIn($assignment);
+
         $data = [
             'check_in_time' => now(),
             'zone' => $zone ?: $assignment->zone,

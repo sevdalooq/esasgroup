@@ -65,6 +65,12 @@ export default [
     permission: 'candidates.view',
   },
   {
+    title: 'Kara Liste',
+    to: { name: 'personnel-blacklist' },
+    icon: { icon: 'tabler-user-x' },
+    permission: 'personnel.blacklist_request',
+  },
+  {
     heading: 'Muhasebe',
     permission: 'accounting.view',
   },

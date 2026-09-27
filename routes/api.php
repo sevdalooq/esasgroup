@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\ProposalController;
 use App\Http\Controllers\Api\ProposalTermTemplateController;
 use App\Http\Controllers\Api\AiController;
+use App\Http\Controllers\Api\BlacklistController;
 use App\Http\Controllers\Api\ProjectProposalController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\NotificationController;
@@ -260,6 +261,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:candidates.view')->get('/candidates/{personnel}', [CandidateController::class, 'show']);
     Route::middleware('permission:candidates.manage')->post('/candidates/{personnel}/approve', [CandidateController::class, 'approve']);
     Route::middleware('permission:candidates.manage')->post('/candidates/{personnel}/reject', [CandidateController::class, 'reject']);
+
+    // Kara liste (talep: saha sorumlusu, onay: yönetici)
+    Route::middleware('permission:personnel.blacklist_request|personnel.blacklist_approve')->get('/blacklist/requests', [BlacklistController::class, 'index']);
+    Route::middleware('permission:personnel.view')->get('/blacklist/personnel', [BlacklistController::class, 'blacklisted']);
+    Route::middleware('permission:personnel.blacklist_request|personnel.blacklist_approve')->post('/personnel/{personnel}/blacklist-request', [BlacklistController::class, 'requestBlacklist']);
+    Route::middleware('permission:personnel.blacklist_approve')->post('/personnel/{personnel}/blacklist/remove', [BlacklistController::class, 'removeFromBlacklist']);
+    Route::middleware('permission:personnel.blacklist_approve')->post('/blacklist/requests/{blacklistRequest}/approve', [BlacklistController::class, 'approve']);
+    Route::middleware('permission:personnel.blacklist_approve')->post('/blacklist/requests/{blacklistRequest}/reject', [BlacklistController::class, 'reject']);
 
     // Personel belgeleri (aday + kayıtlı personel)
     Route::middleware('permission:personnel.view')->get('/personnel/{personnel}/documents', [CandidateController::class, 'documents']);

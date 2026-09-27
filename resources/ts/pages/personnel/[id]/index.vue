@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import PersonnelQrCard from '@/views/field/PersonnelQrCard.vue'
+import { useAuthStore } from '@/stores/auth'
+import { useSwal } from '@/composables/useSwal'
 
 interface Group {
   id: number
@@ -90,6 +92,9 @@ interface Personnel {
   photo_2: string | null
   photo_3: string | null
   is_active: boolean
+  is_blacklisted?: boolean
+  blacklisted_at?: string | null
+  blacklist_reason?: string | null
   group_id: number | null
   group?: Group
   personnel_group_id: number | null
@@ -169,6 +174,55 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
 const personnel = ref<Personnel | null>(null)
+const authStore = useAuthStore()
+const swal = useSwal()
+
+// Kara liste
+const blacklistDialog = ref(false)
+const blacklistReason = ref('')
+const blacklistLoading = ref(false)
+const canRequestBlacklist = computed(() => authStore.hasPermission('personnel.blacklist_request') || authStore.hasPermission('personnel.blacklist_approve'))
+const canApproveBlacklist = computed(() => authStore.hasPermission('personnel.blacklist_approve'))
+
+const submitBlacklistRequest = async () => {
+  if (!personnel.value || blacklistReason.value.trim().length < 5)
+    return
+  blacklistLoading.value = true
+  try {
+    const res = await $api(`/personnel/${personnel.value.id}/blacklist-request`, { method: 'POST', body: { reason: blacklistReason.value } })
+    swal.toast('success', res.message)
+    blacklistDialog.value = false
+    blacklistReason.value = ''
+    await fetchPersonnel()
+  }
+  catch (e: any) {
+    const first = e.data?.errors ? Object.values(e.data.errors as Record<string, string[]>)[0]?.[0] : null
+    swal.toast('error', first || e.data?.message || 'İşlem başarısız')
+  }
+  finally {
+    blacklistLoading.value = false
+  }
+}
+
+const removeFromBlacklist = async () => {
+  if (!personnel.value)
+    return
+  const result = await swal.confirm('Kara listeden çıkarılsın mı?', `${personnel.value.first_name} ${personnel.value.last_name} yeniden projelere onaysız atanabilecek.`)
+  if (!result.isConfirmed)
+    return
+  blacklistLoading.value = true
+  try {
+    const res = await $api(`/personnel/${personnel.value.id}/blacklist/remove`, { method: 'POST', body: {} })
+    swal.toast('success', res.message)
+    await fetchPersonnel()
+  }
+  catch (e: any) {
+    swal.toast('error', e.data?.message || 'İşlem başarısız')
+  }
+  finally {
+    blacklistLoading.value = false
+  }
+}
 
 // Fotoğraf modal
 const photoModal = ref(false)
@@ -356,10 +410,38 @@ onMounted(() => {
               >
                 {{ personnel.personnel_group.name }}
               </VChip>
+              <VChip
+                v-if="personnel.is_blacklisted"
+                color="error"
+                size="small"
+                prepend-icon="tabler-ban"
+              >
+                Kara Listede
+                <VTooltip activator="parent" location="bottom">{{ personnel.blacklist_reason || 'Sebep girilmemiş' }}</VTooltip>
+              </VChip>
             </div>
           </div>
 
-          <div class="d-flex gap-2">
+          <div class="d-flex gap-2 flex-wrap">
+            <VBtn
+              v-if="personnel.is_blacklisted && canApproveBlacklist"
+              color="success"
+              variant="tonal"
+              prepend-icon="tabler-user-check"
+              :loading="blacklistLoading"
+              @click="removeFromBlacklist"
+            >
+              Kara Listeden Çıkar
+            </VBtn>
+            <VBtn
+              v-else-if="!personnel.is_blacklisted && canRequestBlacklist"
+              color="error"
+              variant="tonal"
+              prepend-icon="tabler-ban"
+              @click="blacklistDialog = true"
+            >
+              Kara Listeye Al
+            </VBtn>
             <VBtn
               color="primary"
               :to="{ name: 'personnel-id-edit', params: { id: personnel.id } }"
@@ -371,11 +453,36 @@ onMounted(() => {
         </VCardText>
       </VCard>
 
+      <VAlert v-if="personnel.is_blacklisted" type="error" variant="tonal" class="mb-4" icon="tabler-ban">
+        <strong>Bu personel kara listede.</strong> Projeye eklenirse atama yönetici onayına düşer ve onaylanana kadar giriş yapamaz.
+        <div v-if="personnel.blacklist_reason" class="mt-1">Sebep: {{ personnel.blacklist_reason }}</div>
+      </VAlert>
+
       <!-- Saha QR kartı -->
       <PersonnelQrCard
         :personnel="personnel"
         class="mb-4"
       />
+
+      <!-- Kara liste talebi dialog -->
+      <VDialog v-model="blacklistDialog" max-width="500">
+        <VCard>
+          <VCardTitle class="pa-4">Kara Listeye Al</VCardTitle>
+          <VCardText>
+            <VAlert type="warning" variant="tonal" density="compact" class="mb-4">
+              {{ canApproveBlacklist ? 'Yetkiniz olduğu için personel hemen kara listeye alınacak.' : 'Talep yönetici onayına gönderilecek; onaylanınca personel kara listeye girer.' }}
+            </VAlert>
+            <AppTextarea v-model="blacklistReason" label="Sebep *" rows="4" placeholder="Örn. 12.09 etkinliğinde göreve gelmedi, haber vermedi." />
+          </VCardText>
+          <VCardActions class="pa-4">
+            <VSpacer />
+            <VBtn variant="outlined" @click="blacklistDialog = false">Vazgeç</VBtn>
+            <VBtn color="error" :loading="blacklistLoading" :disabled="blacklistReason.trim().length < 5" @click="submitBlacklistRequest">
+              {{ canApproveBlacklist ? 'Kara Listeye Al' : 'Talep Gönder' }}
+            </VBtn>
+          </VCardActions>
+        </VCard>
+      </VDialog>
 
       <VRow>
         <!-- Kisisel Bilgiler -->

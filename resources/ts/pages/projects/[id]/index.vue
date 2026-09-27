@@ -6,6 +6,7 @@ import type { ProposalSectionDraft } from '@/views/projects/ProposalItemsEditor.
 import ProposalTermsEditor from '@/views/projects/ProposalTermsEditor.vue'
 import type { ProposalTermDraft } from '@/views/projects/ProposalTermsEditor.vue'
 import CoverLetterEditor from '@/views/projects/CoverLetterEditor.vue'
+import BulkPersonnelDialog from '@/views/projects/BulkPersonnelDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getEcho } from '@/composables/useEcho'
 import { useSwal } from '@/composables/useSwal'
@@ -18,6 +19,7 @@ interface Personnel {
   first_name: string
   last_name: string
   default_wage: number
+  is_blacklisted?: boolean
   group?: { id: number; name: string }
 }
 
@@ -33,6 +35,7 @@ interface PersonnelAssignment {
   id: number
   personnel_id: number
   personnel: Personnel
+  approval_status?: 'approved' | 'pending' | 'rejected'
   daily_wage: number
   overtime_hours: number
   overtime_rate: number
@@ -135,6 +138,7 @@ const groups = ref<Group[]>([])
 
 // Dialogs
 const showPersonnelDialog = ref(false)
+const showBulkPersonnelDialog = ref(false)
 const showNewPersonnelDialog = ref(false)
 const showInventoryDialog = ref(false)
 const showExpenseDialog = ref(false)
@@ -683,6 +687,8 @@ const assignPersonnel = async () => {
       body: personnelForm.value,
     })
     showPersonnelDialog.value = false
+    if (response.pending_approval)
+      swal.toast('warning', response.message || 'Atama yönetici onayına gönderildi')
 
     // Transform ve seçili güne yeni atamayı ekle (reaktivite için yeni array oluştur)
     const transformedAssignment = transformAssignments([response])[0]
@@ -1958,6 +1964,17 @@ onBeforeUnmount(() => {
               >
                 Personel Ekle
               </VBtn>
+              <VBtn
+                v-if="['draft', 'pending', 'approved', 'active'].includes(project.status)"
+                size="small"
+                color="primary"
+                variant="tonal"
+                prepend-icon="tabler-users-plus"
+                class="ms-2"
+                @click="fetchGroups(); showBulkPersonnelDialog = true"
+              >
+                Toplu Ekle
+              </VBtn>
             </div>
 
             <VTable v-if="(selectedDay.personnelAssignments?.length || 0) > 0" density="compact">
@@ -1980,6 +1997,11 @@ onBeforeUnmount(() => {
                     <span class="font-weight-medium">
                       {{ pa.personnel?.first_name }} {{ pa.personnel?.last_name }}
                     </span>
+                    <VChip v-if="pa.approval_status === 'pending'" size="x-small" color="warning" class="ms-1" prepend-icon="tabler-clock">
+                      Onay bekliyor
+                      <VTooltip activator="parent">Kara listedeki personel; yönetici onaylayana kadar giriş yapamaz</VTooltip>
+                    </VChip>
+                    <VChip v-else-if="pa.personnel?.is_blacklisted" size="x-small" color="error" variant="tonal" class="ms-1" prepend-icon="tabler-ban">Kara liste</VChip>
                   </td>
                   <td>
                     <VChip v-if="pa.personnel?.group" size="x-small" color="info">
@@ -2019,7 +2041,7 @@ onBeforeUnmount(() => {
                         {{ formatTime(pa.check_in_time) }}
                       </VChip>
                       <VBtn
-                        v-else
+                        v-else-if="pa.approval_status !== 'pending'"
                         size="x-small"
                         color="primary"
                         variant="tonal"
@@ -2027,6 +2049,7 @@ onBeforeUnmount(() => {
                       >
                         Giris Yap
                       </VBtn>
+                      <span v-else class="text-caption text-warning">Onay bekliyor</span>
                       <VChip
                         v-if="pa.check_out_time"
                         size="x-small"
@@ -2319,6 +2342,11 @@ onBeforeUnmount(() => {
         <VCardTitle class="pa-4">Personel Ekle</VCardTitle>
         <VCardText>
           <VRow>
+            <VCol v-if="personnelList.find(p => p.id === personnelForm.personnel_id)?.is_blacklisted" cols="12">
+              <VAlert type="warning" variant="tonal" density="compact" icon="tabler-ban">
+                Bu personel kara listede. Atama yönetici onayına gönderilir; onaylanana kadar giriş yapamaz.
+              </VAlert>
+            </VCol>
             <VCol cols="12">
               <div class="d-flex gap-2">
                 <AppAutocomplete
@@ -2333,6 +2361,7 @@ onBeforeUnmount(() => {
                     <VListItem v-bind="props" :title="`${item.raw.first_name} ${item.raw.last_name}`">
                       <template #subtitle>
                         {{ formatCurrency(item.raw.default_wage) }}/gun
+                        <VChip v-if="item.raw.is_blacklisted" size="x-small" color="error" class="ms-1">Kara liste</VChip>
                       </template>
                     </VListItem>
                   </template>
@@ -2881,6 +2910,15 @@ onBeforeUnmount(() => {
         </VCardActions>
       </VCard>
     </VDialog>
+
+    <!-- Toplu Personel Ekle -->
+    <BulkPersonnelDialog
+      v-model="showBulkPersonnelDialog"
+      :day-id="selectedDay?.id ?? null"
+      :days="project.days"
+      :groups="groups"
+      @assigned="fetchProject(true)"
+    />
 
     <!-- Gün Ayarları Dialog -->
     <VDialog v-model="showDaySettingsDialog" max-width="450">

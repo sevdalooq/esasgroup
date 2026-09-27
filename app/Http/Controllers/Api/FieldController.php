@@ -739,6 +739,7 @@ class FieldController extends Controller
                 'personnel_id' => $personnel->id,
                 'daily_wage' => $personnel->default_wage ?? 0,
             ]);
+            app(\App\Services\BlacklistService::class)->handleBlacklistedAssignment($assignment, request()->user());
         }
 
         return $assignment;

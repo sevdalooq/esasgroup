@@ -51,6 +51,9 @@ class Personnel extends Model
         'iban',
         'account_holder_name',
         'is_active',
+        'is_blacklisted',
+        'blacklisted_at',
+        'blacklist_reason',
         // Kan Grubu
         'blood_type',
         // Fiziki Bilgiler
@@ -115,6 +118,8 @@ class Personnel extends Model
         'birth_date' => 'date',
         'default_wage' => 'decimal:2',
         'is_active' => 'boolean',
+        'is_blacklisted' => 'boolean',
+        'blacklisted_at' => 'datetime',
         'applied_at' => 'datetime',
         'last_location_at' => 'datetime',
         'last_lat' => 'float',
@@ -276,6 +281,11 @@ class Personnel extends Model
     public function documents(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(PersonnelDocument::class);
+    }
+
+    public function blacklistRequests(): HasMany
+    {
+        return $this->hasMany(PersonnelBlacklistRequest::class)->latest();
     }
 
     public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo

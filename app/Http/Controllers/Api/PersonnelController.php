@@ -56,6 +56,10 @@ class PersonnelController extends Controller
             $query->where('is_active', $request->boolean('is_active'));
         }
 
+        if ($request->has('is_blacklisted')) {
+            $query->where('is_blacklisted', $request->boolean('is_blacklisted'));
+        }
+
         // Banka bilgisi filtresi
         if ($request->has('has_bank_info')) {
             if ($request->boolean('has_bank_info')) {
@@ -240,7 +244,7 @@ class PersonnelController extends Controller
         }
 
         $personnel = $query->orderBy('first_name')
-            ->get(['id', 'first_name', 'last_name', 'group_id', 'personnel_group_id', 'default_wage']);
+            ->get(['id', 'first_name', 'last_name', 'group_id', 'personnel_group_id', 'default_wage', 'phone', 'photo_1', 'is_blacklisted']);
 
         return response()->json($personnel);
     }

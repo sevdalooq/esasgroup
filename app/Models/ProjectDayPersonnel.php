@@ -20,6 +20,7 @@ class ProjectDayPersonnel extends Model
         'overtime_rate',
         'total_earnings',
         'presence',
+        'approval_status',
         'break_started_at',
         'break_minutes',
         'zone',

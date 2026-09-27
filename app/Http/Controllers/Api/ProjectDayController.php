@@ -9,6 +9,7 @@ use App\Models\ProjectDayInventory;
 use App\Models\Personnel;
 use App\Models\Inventory;
 use App\Models\ProjectExpense;
+use App\Services\BlacklistService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +25,7 @@ class ProjectDayController extends Controller
             'project:id,name,customer_id,status',
             'project.customer:id,name',
             'supervisor:id,name,phone',
-            'personnelAssignments.personnel:id,first_name,last_name,group_id,default_wage,phone',
+            'personnelAssignments.personnel:id,first_name,last_name,group_id,default_wage,phone,is_blacklisted',
             'personnelAssignments.personnel.group:id,name,commission_type,commission_value',
             'inventoryAssignments.inventory:id,name,type,serial_number,daily_rate',
             'expenses',
@@ -74,9 +75,13 @@ class ProjectDayController extends Controller
         }
 
         $assignment = $projectDay->personnelAssignments()->create($validated);
-        $assignment->load('personnel:id,first_name,last_name,group_id,default_wage', 'personnel.group:id,name');
+        $pendingApproval = app(BlacklistService::class)->handleBlacklistedAssignment($assignment, $request->user(), $request->input('reason'));
+        $assignment->load('personnel:id,first_name,last_name,group_id,default_wage,is_blacklisted', 'personnel.group:id,name');
 
-        return response()->json($assignment, 201);
+        return response()->json(array_merge($assignment->toArray(), [
+            'pending_approval' => $pendingApproval,
+            'message' => $pendingApproval ? 'Personel kara listede: atama yönetici onayına gönderildi.' : null,
+        ]), 201);
     }
 
     /**
@@ -193,34 +198,69 @@ class ProjectDayController extends Controller
     public function bulkAssignPersonnel(Request $request, ProjectDay $projectDay): JsonResponse
     {
         $validated = $request->validate([
-            'personnel_ids' => 'required|array',
+            'personnel_ids' => 'required|array|min:1',
             'personnel_ids.*' => 'exists:personnel,id',
             'zone' => 'nullable|string|max:100',
+            'daily_wage' => 'nullable|numeric|min:0',
+            'apply_to_all_days' => 'nullable|boolean',
+            'day_ids' => 'nullable|array',
+            'day_ids.*' => 'integer',
+            'reason' => 'nullable|string|max:500',
         ]);
 
-        $created = [];
-        $skipped = [];
+        // Hedef günler: seçili gün, tüm günler veya belirli günler
+        $days = collect([$projectDay]);
+        if (!empty($validated['apply_to_all_days'])) {
+            $days = ProjectDay::where('project_id', $projectDay->project_id)->whereIn('status', ['pending', 'active'])->orderBy('date')->get();
+        } elseif (!empty($validated['day_ids'])) {
+            $days = ProjectDay::where('project_id', $projectDay->project_id)->whereIn('id', $validated['day_ids'])->orderBy('date')->get();
+        }
 
-        foreach ($validated['personnel_ids'] as $personnelId) {
-            // Zaten atanmış mı kontrol et
-            if ($projectDay->personnelAssignments()->where('personnel_id', $personnelId)->exists()) {
-                $skipped[] = $personnelId;
-                continue;
+        $personnelList = Personnel::whereIn('id', $validated['personnel_ids'])->get()->keyBy('id');
+        $blacklist = app(BlacklistService::class);
+        $created = 0;
+        $skipped = 0;
+        $pending = 0;
+
+        DB::transaction(function () use ($days, $validated, $personnelList, $blacklist, $request, &$created, &$skipped, &$pending) {
+            foreach ($days as $day) {
+                $existing = $day->personnelAssignments()->pluck('personnel_id')->all();
+                foreach ($validated['personnel_ids'] as $personnelId) {
+                    if (in_array($personnelId, $existing)) {
+                        $skipped++;
+                        continue;
+                    }
+                    $personnel = $personnelList[$personnelId] ?? null;
+                    if (!$personnel) {
+                        continue;
+                    }
+                    $assignment = $day->personnelAssignments()->create([
+                        'personnel_id' => $personnelId,
+                        'daily_wage' => $validated['daily_wage'] ?? $personnel->default_wage,
+                        'zone' => $validated['zone'] ?? null,
+                    ]);
+                    if ($blacklist->handleBlacklistedAssignment($assignment, $request->user(), $validated['reason'] ?? null)) {
+                        $pending++;
+                    }
+                    $created++;
+                }
             }
+        });
 
-            $personnel = Personnel::find($personnelId);
-            $assignment = $projectDay->personnelAssignments()->create([
-                'personnel_id' => $personnelId,
-                'daily_wage' => $personnel->default_wage,
-                'zone' => $validated['zone'] ?? null,
-            ]);
-            $created[] = $assignment->id;
+        $message = "{$created} atama yapıldı";
+        if ($skipped) {
+            $message .= ", {$skipped} zaten atanmıştı";
+        }
+        if ($pending) {
+            $message .= ", {$pending} atama kara liste nedeniyle yönetici onayı bekliyor";
         }
 
         return response()->json([
-            'message' => count($created) . ' personel atandi, ' . count($skipped) . ' zaten atanmis.',
-            'created_count' => count($created),
-            'skipped_count' => count($skipped),
+            'message' => $message.'.',
+            'created_count' => $created,
+            'skipped_count' => $skipped,
+            'pending_count' => $pending,
+            'day_count' => $days->count(),
         ]);
     }
 
@@ -248,12 +288,16 @@ class ProjectDayController extends Controller
 
             // Personel atamalarını kopyala
             foreach ($previousDay->personnelAssignments as $pa) {
+                if ($pa->approval_status === 'rejected') {
+                    continue;
+                }
                 if (!$projectDay->personnelAssignments()->where('personnel_id', $pa->personnel_id)->exists()) {
-                    $projectDay->personnelAssignments()->create([
+                    $new = $projectDay->personnelAssignments()->create([
                         'personnel_id' => $pa->personnel_id,
                         'daily_wage' => $pa->daily_wage,
                         'zone' => $pa->zone,
                     ]);
+                    app(BlacklistService::class)->handleBlacklistedAssignment($new, request()->user());
                     $copiedPersonnel++;
                 }
             }
