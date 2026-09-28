@@ -12,6 +12,8 @@
 #   - Supervisor (aaPanel > App Store) ile queue:work ve reverb:start süreçleri; aşağıda restart ediliyor.
 #   - Zamanlayıcı (hatırlatma bildirimleri): aaPanel > Cron > Shell Script, her dakika:
 #       cd /www/wwwroot/esasgroup.fraudova.com && /www/server/php/83/bin/php artisan schedule:run >> /dev/null 2>&1
+#   - GitHub webhook: Payload URL, aaPanel > Site > Git Deployment > WebHook penceresindeki güncel URL olmalı
+#     (access_key yenilenince GitHub'daki eski URL 200 + {"code":1} döner, deploy tetiklenmez).
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/www/wwwroot/esasgroup.fraudova.com}"
